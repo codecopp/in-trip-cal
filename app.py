@@ -356,7 +356,7 @@ def main():
                 st.code("\n".join(mismatches), language="diff")
                 return
 
-            st.success("✔️ 서식 확인 완료. 처리를 진행하세요.")
+            st.success("✔️ 서식이 일치합니다. '처리 시작하기'를 누르세요.")
             st.header("2. 처리 및 결과 다운로드")
 
             if st.button("🚀 처리 시작하기", type="primary"):
@@ -379,6 +379,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
