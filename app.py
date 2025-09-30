@@ -306,8 +306,8 @@ def create_processed_workbook(uploaded_file) -> BytesIO:
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.title(f"📑 {APP_TITLE}")
-    st.markdown("인사랑 '관내출장내역' 파일을 업로드하면 여비를 계산하고 요약 시트를 생성합니다.")
-    st.markdown("※ 업로드 형식: .xlsx/.xlsm, 원본 헤더 유지")
+    st.markdown("✅ 인사랑 '관내출장내역' 파일을 업로드하면 여비를 계산하고 요약 시트를 생성합니다.")
+    st.markdown("✅ '팀별 수합자료'와 '저장된 파일'을 비교하여 교차 검증하시면 됩니다.")
     
     # 사이드바: 매뉴얼 다운로드
     with st.sidebar:
@@ -379,6 +379,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
