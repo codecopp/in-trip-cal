@@ -357,17 +357,17 @@ def main():
                 return
 
             st.success("✔️ 서식이 일치합니다. '처리 시작하기'를 누르세요.")
-            st.header("2. 처리 및 결과 다운로드")
+            st.header("2. 처리 및 정리내역 다운로드")
 
             if st.button("🚀 처리 시작하기", type="primary"):
                 with st.spinner("처리 중..."):
                     try:
                         uploaded_file.seek(0)  # 실제 처리 전 포인터 초기화
                         processed_output = create_processed_workbook(uploaded_file)
-                        st.success("✔️ 처리가 완료되었습니다. 결과 엑셀 파일을 다운로드하세요.")
+                        st.success("✔️ 처리가 완료되었습니다. '정리내역'을 다운로드하세요.")
                         default_name = f"관내출장_정리내역_{kst_timestamp()}.xlsx"
                         st.download_button(
-                            label="💾 결과 엑셀 파일 다운로드",
+                            label="💾 정리내역 다운로드",
                             data=processed_output,
                             file_name=default_name,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -379,6 +379,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
