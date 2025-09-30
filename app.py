@@ -335,7 +335,7 @@ def main():
     # 1. 업로드
     st.header("1. 엑셀 파일 업로드")
     uploaded_file = st.file_uploader(
-        "인사랑 '관내출장내역' 엑셀 파일(.xls/.xlsx)을 선택하세요.",
+        "인사랑 '관내출장내역' 엑셀 파일(.xlsx)을 선택하세요.",
         type=["xlsx", "xls"]
     )
 
