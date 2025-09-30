@@ -364,7 +364,7 @@ def main():
                     try:
                         uploaded_file.seek(0)  # 실제 처리 전 포인터 초기화
                         processed_output = create_processed_workbook(uploaded_file)
-                        st.success("완료. 결과 파일을 다운로드하세요.")
+                        st.success("✔️ 처리가 완료되었습니다. 결과 엑셀 파일을 다운로드하세요.")
                         default_name = f"관내출장_정리내역_{kst_timestamp()}.xlsx"
                         st.download_button(
                             label="💾 결과 엑셀 파일 다운로드",
@@ -379,6 +379,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
