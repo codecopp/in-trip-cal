@@ -1,0 +1,5 @@
+streamlit
+pandas
+openpyxl
+xlrd
+pytz  # ZoneInfo가 없는 구버전 파이썬 환경을 위해 추가
