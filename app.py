@@ -825,7 +825,7 @@ def tab_upchubi():
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.title(APP_TITLE)
-    st.caption("단계: ①준비 → ②업로드 → ③가공·다운로드·요약 → ④지급 조서")
+    st.caption("단계: ① 업로드용 백데이터 준비 → ② 파일 업로드 → ③ 데이터 가공·요약 → ④ 지급 조서 다운로드")
     tabs = st.tabs(["관내출장여비", "초과근무수당", "업무추진비"])
     with tabs[0]:
         tab_gwannae()
@@ -837,3 +837,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
