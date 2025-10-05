@@ -781,6 +781,7 @@ def tab_gwannae():
 
         st.markdown("---")
         st.markdown("#### ④ 지급 조서 다운로드")
+        st.markdown("📢 수합 자료와 비교하여, 교차 검증용으로 사용하세요.")
 
         disabled = ("TMPL_DF" not in st.session_state or st.session_state.get("TMPL_DF", pd.DataFrame()).empty)
         if disabled:
@@ -847,6 +848,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
