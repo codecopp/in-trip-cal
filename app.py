@@ -594,6 +594,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
 # ----------------------------------
 def tab_gwannae():
     st.title("🚗 관내출장여비")
+    st.markdown("---")
     st.markdown("#### ① 업로드용 백데이터 준비")
     st.markdown("📢 １．「인사랑」에서 관내 출장여비 엑셀을 추출해주세요．")
     if os.path.exists(MANUAL_FILE):
@@ -833,6 +834,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
