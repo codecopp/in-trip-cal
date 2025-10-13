@@ -824,7 +824,7 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, de
 def tab_gwannae():
     st.title("🚗 관내출장여비 정산")
     st.markdown("---")
-    st.markdown("#### ① 업로드용 백데이터 준비")
+    st.markdown("#### ① 업로드용 백데이터 준비 (다운로드 대기 시간 소요)")
     st.markdown("📢 １．「인사랑」에서 관내 출장여비 엑셀을 추출해주세요．")
     if os.path.exists(MANUAL_FILE):
         with open(MANUAL_FILE, "rb") as f:
@@ -1034,7 +1034,7 @@ def tab_overtime():
     st.title("⏱️ 초과근무수당")
     st.markdown("---")
 
-    st.markdown("#### ① 업로드용 백데이터 준비")
+    st.markdown("#### ① 업로드용 백데이터 준비 (다운로드 대기 시간 소요)")
     st.markdown("📢 초과근무자 백데이터 서식 파일입니다．")
     st.markdown("※ 연번|직급|성명|수당시간을 입력하세요.")
     if os.path.exists(FORM_TEMPLATE_FILE_OVT):
@@ -1135,3 +1135,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
