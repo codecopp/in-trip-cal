@@ -515,25 +515,34 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                 else:
                     break
 
-            total_val = 0
+            # 각 행 소계 = 출장일수 * 지급단가 (수식)
             for rr in range(r, run_end + 1):
-                v = ws.cell(rr, col_sub).value
-                try:
-                    total_val += int(float(v or 0))
-                except Exception:
-                    total_val += 0
+                cnt_cell = ws.cell(rr, col_cnt)
+                pay_cell = ws.cell(rr, col_pay)
+                sub_cell = ws.cell(rr, col_sub)
+                sub_cell.value = f"={cnt_cell.coordinate}*{pay_cell.coordinate}"
+                sub_cell.number_format = "#,##0"
+                sub_cell.alignment = Alignment(horizontal="right", vertical="center")
 
+            # 합계 = 동일 계좌번호 블록 내 소계 셀들을 직접 더한 수식(보통 2개: 20k, 10k)
+            sub_coords = [ws.cell(rr, col_sub).coordinate for rr in range(r, run_end + 1)]
+            total_formula = "=" + "+".join(sub_coords) if sub_coords else "=0"
+
+            # 인적사항 병합
             to_merge = [x for x in [col_serial, col_rank, col_name, col_bank, col_acct, col_total] if x]
             if run_end > r:
                 for c in to_merge:
                     ws.merge_cells(start_row=r, start_column=c, end_row=run_end, end_column=c)
                     ws.cell(r, c).alignment = Alignment(vertical="center", horizontal="center")
 
-            ws.cell(r, col_total).value = total_val
+            # 합계 셀 설정
+            ws.cell(r, col_total).value = total_formula
             ws.cell(r, col_total).number_format = "#,##0"
             ws.cell(r, col_total).alignment = Alignment(horizontal="right", vertical="center")
 
             r = run_end + 1
+
+
 
         # (6-1) 총합계 행 + 바로 아래 1행 무테
         last_data_row = ws.max_row
@@ -688,13 +697,43 @@ def tab_gwannae():
         dept_name = st.text_input("부서명", value=st.session_state.get("DEPT_NAME", ""), key="dept_name")
         st.session_state["DEPT_NAME"] = dept_name
 
-        # Row 2: 출장연도, 출장월
+        # Row 2: 출장연도, 출장월  ▶ 연/월 드롭다운(연도 목록에 전년도·후년도 1개씩 추가)
         cY, cM = st.columns([1, 1])
+
+        # 데이터 기반 연도 목록
+        years_in_data = sorted(df["도착일자_dt"].dt.year.dropna().unique().tolist())
+        base_years = years_in_data if years_in_data else [datetime.now().year]
+
+        # 전년도·후년도 1개씩만 추가(연속 연도 채우지 않음)
+        min_y, max_y = min(base_years), max(base_years)
+        year_options = sorted(set(base_years + [min_y - 1, max_y + 1]))
+
+        # 기본 연도: 현재 연도가 목록에 있으면 현재 연도, 없으면 데이터 내 최댓값
+        default_year = datetime.now().year if datetime.now().year in year_options else max(base_years)
+
         with cY:
-            sel_year = st.selectbox("출장연도", years, index=years.index(default_year) if years else 0, key="yr_sel")
+            sel_year = st.selectbox(
+                "출장연도",
+                options=year_options,
+                index=year_options.index(default_year),
+                key="yr_sel",
+                    )
+
+        # 월 목록: 1~12 고정 목록. 기본값은 데이터에 있는 월 중 가장 큰 값, 없으면 현재 월.
+        months_in_year = sorted(
+            df[df["도착일자_dt"].dt.year == sel_year]["도착일자_dt"].dt.month.dropna().unique().tolist()
+        )
+        month_options = list(range(1, 13))
+        default_month = (months_in_year[-1] if months_in_year else datetime.now().month)
+        default_month_idx = month_options.index(default_month)
+
         with cM:
-            months = sorted(df[df["도착일자_dt"].dt.year == sel_year]["도착일자_dt"].dt.month.unique().tolist()) or list(range(1, 13))
-            sel_month = st.selectbox("출장월", months, index=(len(months) - 1 if months else 0), key="mo_sel")
+            sel_month = st.selectbox(
+                "출장월",
+                options=month_options,
+                index=default_month_idx,
+                key="mo_sel",
+            )
 
         df_ym = df[(df["도착일자_dt"].dt.year == sel_year) & (df["도착일자_dt"].dt.month == sel_month)]
         if df_ym.empty:
@@ -848,17 +887,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
