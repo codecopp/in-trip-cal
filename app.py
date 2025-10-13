@@ -49,6 +49,20 @@
 #     - ④ 지급 조서 다운로드(파일명: {부서} 관내출장여비_지급조서(YYYY년 MM월).xlsx)
 # =======================================================================================
 
+# app.py
+# =======================================================================================
+# 목적: 관내출장여비 · 초과근무수당 · 업무추진비(3탭) 자동화
+# 변경사항(요청 반영):
+# - 초과근무수당: 보조 '단순 합계' 기능 제거
+# - ③ 데이터 가공·요약: 비고에 강제조정 내역 포함(월57h/분기90h 캡 사유)
+# - ④ 엑셀 저장: 누계 열(첫/중간/마지막) 셀 연한 파랑 + 볼드, 값이 57이면 빨강 폰트 + 연한 분홍 배경
+# - ④ 엑셀 저장: 강제조정이 있었던 월의 ‘수당시간(h)’ 셀을 빨강 굵은 폰트로 표시
+# - 비고 문구 고정:
+#     · 월 57시간 초과 시:   "월 57시간 초과로 시간 조정함(조정 전 : {원래값} 시간)"
+#     · 분기 합 90시간 초과 시: "분기 합 90시간 초과로 시간 조정함(조정 전 : {조정전값} 시간)"
+# - 저장 파일명 예: {부서} 초과근무내역(YYYY년 MM월).xlsx
+# =======================================================================================
+
 from __future__ import annotations
 
 import os
@@ -74,9 +88,18 @@ TARGET_HEADERS = ["순번", "출장자", "도착일자", "총출장시간", "차
                   "4시간구분", "1시간미만", "지급단가", "여비금액"]
 REQUIRED_SRC = ["순번", "출장자", "도착일자", "총출장시간", "차량"]
 
-FILL_HEADER = PatternFill(fill_type="solid", start_color="DDEBF7", end_color="DDEBF7")
+FILL_HEADER = PatternFill(fill_type="solid", start_color="DDEBF7", end_color="DDEBF7")  # 연한 파랑
 THIN_SIDE = Side(style="thin", color="000000")
 BORDER_THIN = Border(top=THIN_SIDE, bottom=THIN_SIDE, left=THIN_SIDE, right=THIN_SIDE)
+PINK = PatternFill(fill_type="solid", start_color="FFC0CB", end_color="FFC0CB")          # 연한 분홍
+GRAY = PatternFill(fill_type="solid", start_color="EEEEEE", end_color="EEEEEE")
+
+# 초과근무 탭용 서식 파일명
+FORM_TEMPLATE_FILE_OVT = "(서식) 초과근무자 백데이터.xlsx"
+
+# 초과근무 규칙
+OVT_MONTH_CAP = 57.0   # 월 최대 57시간
+OVT_QTR_CAP = 90.0     # 분기 최대 90시간
 
 # ----------------------------------
 # 시간대(KST)
@@ -88,28 +111,23 @@ except ImportError:
     from pytz import timezone
     KST = timezone("Asia/Seoul")
 
-
 def kst_timestamp() -> str:
     return datetime.now(KST).strftime("%y%m%d_%H%M")
 
-
 # ----------------------------------
-# 규칙/판정 보조 상수·함수
+# 규칙/판정 보조 상수·함수(출장)
 # ----------------------------------
 _HOURS_GE4 = set(map(str, range(4, 24)))
 _HOURS_LT4 = {"1", "2", "3"}
-
 
 def _extract_hour_token(s: str) -> str | None:
     m = re.search(r"(\d+)\s*시간", s)
     return m.group(1) if m else None
 
-
 def rule_4h_bucket(s: str) -> str:
     s = "" if pd.isna(s) else str(s)
     s = s.replace(" ", "")
     has_day, has_hour, has_min = ("일" in s), ("시간" in s), ("분" in s)
-
     if has_day:
         return "4시간이상"
     if has_hour and has_min:
@@ -130,12 +148,10 @@ def rule_4h_bucket(s: str) -> str:
         return "4시간미만"
     return ""
 
-
 def rule_under1h(s: str) -> str:
     s = "" if pd.isna(s) else str(s)
     s = s.replace(" ", "")
     return "1시간미만" if ("시간" not in s and "일" not in s) and ("분" in s) else ""
-
 
 def rule_pay(x_val: str, car_val: str) -> int:
     x = (x_val or "").strip()
@@ -150,7 +166,6 @@ def rule_pay(x_val: str, car_val: str) -> int:
         return 0
     return 0
 
-
 # ----------------------------------
 # DataFrame/엑셀 유틸
 # ----------------------------------
@@ -160,7 +175,6 @@ def to_datetime_flex(v):
     if isinstance(v, (datetime, pd.Timestamp)):
         return pd.to_datetime(v)
     try:
-        # 엑셀 직렬값 처리
         if isinstance(v, (int, float)) or (isinstance(v, str) and v.replace(".", "", 1).isdigit()):
             num = float(v)
             base = datetime(1899, 12, 30)
@@ -172,7 +186,6 @@ def to_datetime_flex(v):
     except Exception:
         return pd.NaT
 
-
 def ws_to_dataframe(ws: Worksheet) -> pd.DataFrame:
     rows = list(ws.values)
     if not rows:
@@ -180,35 +193,28 @@ def ws_to_dataframe(ws: Worksheet) -> pd.DataFrame:
     header = [("" if v is None else str(v).strip()) for v in rows[0]]
     return pd.DataFrame(rows[1:], columns=header)
 
-
 def prepare_backend_sheet_xlsx(file_like):
     wb = load_workbook(file_like)
     ws = wb.active
     ws.title = "백데이터"
-
     # 병합 해제
     for rng in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(rng))
-
     # 여분 열/행 삭제
     ws.delete_cols(1, 1)
     ws.delete_rows(1, 3)
-
     # 빈 이름 행 제거(3열 기준)
     for r in range(ws.max_row, 2, -1):
         v = ws.cell(row=r, column=3).value
         if v is None or str(v).strip() == "":
             ws.delete_rows(r, 1)
-
     return wb
-
 
 def save_wb_to_bytes(wb) -> BytesIO:
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf
-
 
 def read_template_dataframe(file_like) -> pd.DataFrame:
     wb = load_workbook(file_like, data_only=True)
@@ -217,7 +223,6 @@ def read_template_dataframe(file_like) -> pd.DataFrame:
     wb.close()
     if not rows:
         return pd.DataFrame()
-
     header = [("" if v is None else str(v).strip()) for v in rows[0]]
     df = pd.DataFrame(rows[1:], columns=header).dropna(how="all")
     for c in df.columns:
@@ -225,9 +230,8 @@ def read_template_dataframe(file_like) -> pd.DataFrame:
             df[c] = df[c].apply(lambda x: "" if x is None else str(x).strip())
     return df
 
-
 # ----------------------------------
-# 가공/요약 생성
+# 가공/요약 생성(출장)
 # ----------------------------------
 def create_gagong_and_summary(wb):
     dfb = ws_to_dataframe(wb["백데이터"])
@@ -267,9 +271,8 @@ def create_gagong_and_summary(wb):
 
     return wb, proc
 
-
 # ----------------------------------
-# 혼합 DF 생성 유틸
+# 혼합 DF 생성 유틸(출장)
 # ----------------------------------
 def find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     cols = {str(c).strip(): c for c in df.columns}
@@ -282,7 +285,6 @@ def find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
         if key in norm:
             return norm[key]
     return None
-
 
 def parse_days(txt: str) -> list:
     if pd.isna(txt) or str(txt).strip() == "":
@@ -300,13 +302,11 @@ def parse_days(txt: str) -> list:
     strs = [d for d in out if not isinstance(d, int)]
     return nums + strs
 
-
 def _norm_serial(v):
     if v is None or (isinstance(v, str) and v.strip() == ""):
         return pd.NA
     n = pd.to_numeric(v, errors="coerce")
     return pd.NA if pd.isna(n) else int(float(n))
-
 
 def build_mixed_df(summary_df: pd.DataFrame, tmpl_df: pd.DataFrame) -> pd.DataFrame:
     if summary_df is None or summary_df.empty:
@@ -390,31 +390,26 @@ def build_mixed_df(summary_df: pd.DataFrame, tmpl_df: pd.DataFrame) -> pd.DataFr
 
     return out_df
 
-
 # ----------------------------------
-# 엑셀 서식 보조 유틸(중복 제거)
+# 엑셀 서식 보조 유틸(공통)
 # ----------------------------------
 def set_alignment(ws: Worksheet, rows: range, cols: range, horizontal="center", vertical="center"):
     for rr in rows:
         for cc in cols:
             ws.cell(rr, cc).alignment = Alignment(horizontal=horizontal, vertical=vertical)
 
-
 def set_number_format(ws: Worksheet, rows: range, cols: list[int], fmt: str):
     for rr in rows:
         for cc in cols:
             ws.cell(rr, cc).number_format = fmt
 
-
 def set_row_border(ws: Worksheet, row: int, max_col: int, border: Border):
     for c in range(1, max_col + 1):
         ws.cell(row, c).border = border
 
-
 def set_header_fill(ws: Worksheet, row: int, max_col: int, fill: PatternFill):
     for c in range(1, max_col + 1):
         ws.cell(row, c).fill = fill
-
 
 def auto_col_width(ws: Worksheet):
     for c in range(1, ws.max_column + 1):
@@ -426,21 +421,19 @@ def auto_col_width(ws: Worksheet):
                 max_len = lv
         ws.column_dimensions[get_column_letter(c)].width = min(max_len + 2, 60)
 
-
 # ----------------------------------
-# 혼합 DF → 엑셀 렌더링
+# 혼합 DF → 엑셀 렌더링(출장)
 # ----------------------------------
 def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None, dept: str | None) -> BytesIO:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        # 5행 헤더가 되도록 startrow=4
         df.to_excel(writer, sheet_name="혼합", index=False, startrow=4)
         ws = writer.book["혼합"]
 
         header_row = 5
         data_start = header_row + 1
 
-        # (1) ‘출장현황*’ 헤더 병합
+        # ‘출장현황*’ 헤더 병합
         first_status_col, last_status_col = None, None
         for c in range(1, ws.max_column + 1):
             h = ws.cell(header_row, c).value
@@ -453,7 +446,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                            end_row=header_row, end_column=last_status_col)
             ws.cell(header_row, first_status_col).value = "출장현황"
 
-        # (2) ‘소계’ 오른쪽에 ‘합계’ 열 삽입
+        # ‘소계’ 오른쪽에 ‘합계’ 열 삽입
         hdr_idx = {ws.cell(header_row, c).value: c for c in range(1, ws.max_column + 1)}
         sub_col = hdr_idx.get("소계")
         if not sub_col:
@@ -463,19 +456,19 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
         ws.cell(header_row, total_col).value = "합계"
         ws.cell(header_row, total_col).font = Font(bold=True)
 
-        # (3) 4행 ‘합계’ 헤더 위 칸에 단위 표기
+        # 단위
         unit_row = header_row - 1
         ws.cell(unit_row, total_col).value = "(단위 : 원)"
         ws.cell(unit_row, total_col).alignment = Alignment(horizontal="right", vertical="center")
 
-        # (4) A2 제목 및 병합 + 글자크기 20
+        # 제목
         title = f"{(dept or '').strip()} 관내 출장여비 지급내역({year or ''}년 {month or ''}월)"
         ws["A2"] = title
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=total_col)
         ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
         ws["A2"].font = Font(size=20)
 
-        # (5) 헤더 색상, 인덱스 재계산
+        # 헤더 색
         hdr_idx = {ws.cell(header_row, c).value: c for c in range(1, ws.max_column + 1)}
         col_serial = hdr_idx.get("연번")
         col_rank = hdr_idx.get("직급")
@@ -491,7 +484,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
 
         set_header_fill(ws, header_row, last_col, FILL_HEADER)
 
-        # (6) 동일 인적사항 병합 및 합계 계산
+        # 동일 인적사항 병합 및 합계 계산
         r = data_start
         while r <= last_row:
             key = (
@@ -515,7 +508,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                 else:
                     break
 
-            # 각 행 소계 = 출장일수 * 지급단가 (수식)
+            # 소계 수식
             for rr in range(r, run_end + 1):
                 cnt_cell = ws.cell(rr, col_cnt)
                 pay_cell = ws.cell(rr, col_pay)
@@ -524,7 +517,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                 sub_cell.number_format = "#,##0"
                 sub_cell.alignment = Alignment(horizontal="right", vertical="center")
 
-            # 합계 = 동일 계좌번호 블록 내 소계 셀들을 직접 더한 수식(보통 2개: 20k, 10k)
+            # 합계 수식
             sub_coords = [ws.cell(rr, col_sub).coordinate for rr in range(r, run_end + 1)]
             total_formula = "=" + "+".join(sub_coords) if sub_coords else "=0"
 
@@ -535,16 +528,14 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                     ws.merge_cells(start_row=r, start_column=c, end_row=run_end, end_column=c)
                     ws.cell(r, c).alignment = Alignment(vertical="center", horizontal="center")
 
-            # 합계 셀 설정
+            # 합계 셀
             ws.cell(r, col_total).value = total_formula
             ws.cell(r, col_total).number_format = "#,##0"
             ws.cell(r, col_total).alignment = Alignment(horizontal="right", vertical="center")
 
             r = run_end + 1
 
-
-
-        # (6-1) 총합계 행 + 바로 아래 1행 무테
+        # 총합계
         last_data_row = ws.max_row
         totals_row = last_data_row + 1
         ws.cell(totals_row, 2).value = "합계"
@@ -556,14 +547,14 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
         set_header_fill(ws, totals_row, last_col, FILL_HEADER)
 
         spacer_row = totals_row + 1
-        set_row_border(ws, spacer_row, max(ws.max_column, total_col), Border())  # 무테
+        set_row_border(ws, spacer_row, max(ws.max_column, ws.max_column), Border())  # 무테
 
-        # (6-2) 푸터 3행(합계열까지 병합)
+        # 푸터
         notice_row = last_data_row + 3
         date_row = notice_row + 1
         sign_row = notice_row + 2
         for rr in (notice_row, date_row, sign_row):
-            ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=total_col)
+            ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=ws.max_column)
 
         ws.cell(notice_row, 1).value = "상기와 같이 내역을 확인함"
         ws.cell(notice_row, 1).alignment = Alignment(horizontal="center", vertical="center")
@@ -578,38 +569,269 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
         ws.cell(sign_row, 1).value = f"확인자 : {dept_str} 행정○급 ○○○ (인)"
         ws.cell(sign_row, 1).alignment = Alignment(horizontal="center", vertical="center")
 
-        # (7) 정렬
-        money_cols = [col_pay, col_sub, col_total]
-        center_cols = [c for c in range(1, last_col + 1) if c not in money_cols]
-        set_alignment(ws, range(header_row, header_row + 1), range(1, last_col + 1))  # 헤더 가운데
-        set_alignment(ws, range(data_start, ws.max_row + 1), center_cols)            # 본문 가운데
-        set_alignment(ws, range(data_start, ws.max_row + 1), money_cols, horizontal="right")  # 금액열 우측
-
-        # (8) 숫자 포맷
-        set_number_format(ws, range(data_start, ws.max_row + 1), [col_pay, col_sub, col_total], "#,##0")
-        if col_cnt:
-            set_number_format(ws, range(data_start, ws.max_row + 1), [col_cnt], "0")
-        if col_serial:
-            set_number_format(ws, range(data_start, ws.max_row + 1), [col_serial], "0")
-
-        # (9) 테두리(스페이서/푸터는 무테 유지)
+        # 정렬·포맷·테두리
+        set_alignment(ws, range(header_row, header_row + 1), range(1, ws.max_column + 1))
         for rr in range(header_row, ws.max_row + 1):
             if rr in (spacer_row, notice_row, date_row, sign_row):
-                set_row_border(ws, rr, max(ws.max_column, total_col), Border())
+                set_row_border(ws, rr, ws.max_column, Border())
                 continue
-            set_row_border(ws, rr, max(ws.max_column, total_col), BORDER_THIN)
+            set_row_border(ws, rr, ws.max_column, BORDER_THIN)
 
-        # (10) 자동 열 너비, (10-1) 행 높이 자동
         auto_col_width(ws)
         for rr in range(1, ws.max_row + 1):
             ws.row_dimensions[rr].height = None
-
-        # (11) 고정 창
         ws.freeze_panes = ws["A6"]
 
     buf.seek(0)
     return buf
 
+# ----------------------------------
+# 초과근무: 분기 테이블 생성(+ 강제조정 비고·플래그)
+# ----------------------------------
+def _quarter_months(month: int) -> list[int]:
+    q_start = ((int(month) - 1) // 3) * 3 + 1
+    return [q_start, q_start + 1, q_start + 2]
+
+def _month_col_candidates(year: int, m: int) -> list[str]:
+    cands = [
+        f"{m}월", f"{m:02}월",
+        f"{year}-{m}", f"{year}-{m:02}",
+        f"{year}.{m}", f"{year}.{m:02}",
+        f"{year}/{m}", f"{year}/{m:02}",
+    ]
+    if m % 3 == 1:
+        cands += ["분기 첫 달", "첫 달", "첫달", "분기첫달", "분기 첫 달 수당시간(h)"]
+    elif m % 3 == 2:
+        cands += ["분기 중간 달", "중간 달", "중간달", "분기중간달", "분기 중간 달 수당시간(h)"]
+    else:
+        cands += ["분기 마지막 달", "마지막 달", "마지막달", "분기마지막달", "분기 마지막 달 수당시간(h)"]
+    return cands
+
+def _pick_col(df: pd.DataFrame, names: list[str]) -> str | None:
+    return find_col(df, names)
+
+def _to_float(x) -> float:
+    try:
+        s = str(x).replace(",", "").strip()
+        return float(s) if s != "" else 0.0
+    except Exception:
+        return 0.0
+
+def _normalize_month_inputs(v1, v2, v3) -> tuple[float, float, float]:
+    a, b, c = _to_float(v1), _to_float(v2), _to_float(v3)
+
+    # 누적 입력 오인 보호(선택적 휴리스틱)
+    b_is_cum = (b >= a and c == 0 and b > (OVT_MONTH_CAP * 1.2))
+    c_is_cum = (c > (a + b) and c > (OVT_MONTH_CAP * 1.5))
+    if b_is_cum:
+        b = max(0.0, b - a)
+    if c_is_cum:
+        c = max(0.0, c - (a + b))
+    return a, b, c
+
+def _fmt_g(x: float) -> str:
+    # 12.0 → "12", 12.5 → "12.5"
+    return f"{x:g}"
+
+def build_ovt_quarter_df(tmpl_df: pd.DataFrame, year: int, month: int) -> pd.DataFrame:
+    df = tmpl_df.copy()
+
+    c_serial = _pick_col(df, ["연번", "순번", "번호"])
+    c_rank = _pick_col(df, ["직급", "직 급"])
+    c_name = _pick_col(df, ["성명", "이름", "사원명"])
+    if c_name is None:
+        raise RuntimeError("백데이터에서 '성명' 열을 찾지 못했습니다.")
+
+    m1, m2, m3 = _quarter_months(month)
+    col_m1 = _pick_col(df, _month_col_candidates(year, m1)) or ""
+    col_m2 = _pick_col(df, _month_col_candidates(year, m2)) or ""
+    col_m3 = _pick_col(df, _month_col_candidates(year, m3)) or ""
+
+    rows = []
+    for _, r in df.iterrows():
+        nm = str(r.get(c_name, "")).strip()
+        if nm == "":
+            continue
+        serial = r.get(c_serial, "")
+        rank = str(r.get(c_rank, "")).strip() if c_rank else ""
+
+        raw1 = r.get(col_m1, 0)
+        raw2 = r.get(col_m2, 0)
+        raw3 = r.get(col_m3, 0)
+
+        # 원본 월 값
+        v1, v2, v3 = _normalize_month_inputs(raw1, raw2, raw3)
+
+        # 월 57 선적용
+        a1_pre = min(v1, OVT_MONTH_CAP)
+        a2_pre = min(v2, OVT_MONTH_CAP)
+        a3_pre = min(v3, OVT_MONTH_CAP)
+
+        # 분기 90 적용
+        a1 = a1_pre
+        allow2 = max(0.0, OVT_QTR_CAP - a1)
+        a2 = min(a2_pre, allow2)
+        allow3 = max(0.0, OVT_QTR_CAP - (a1 + a2))
+        a3 = min(a3_pre, allow3)
+
+        # 누계·잔여
+        cume1 = a1
+        cume2 = a1 + a2
+        cume3 = a1 + a2 + a3
+        remain = max(0.0, OVT_QTR_CAP - cume3)
+
+        # 강제조정 플래그
+        adj1_m57 = (v1 > a1_pre)
+        adj2_m57 = (v2 > a2_pre)
+        adj3_m57 = (v3 > a3_pre)
+        adj2_q90 = (a2 < a2_pre)    # 분기 잔여로 추가 컷
+        adj3_q90 = (a3 < a3_pre)
+
+        # 비고 문구 생성(요청 고정 문구)
+        msgs = []
+        if adj1_m57:
+            msgs.append(f"월 57시간 초과로 시간 조정함(조정 전 : {_fmt_g(v1)} 시간)")
+        if adj2_m57:
+            msgs.append(f"월 57시간 초과로 시간 조정함(조정 전 : {_fmt_g(v2)} 시간)")
+        if adj3_m57:
+            msgs.append(f"월 57시간 초과로 시간 조정함(조정 전 : {_fmt_g(v3)} 시간)")
+        if adj2_q90:
+            msgs.append(f"분기 합 90시간 초과로 시간 조정함(조정 전 : {_fmt_g(a2_pre)} 시간)")
+        if adj3_q90:
+            msgs.append(f"분기 합 90시간 초과로 시간 조정함(조정 전 : {_fmt_g(a3_pre)} 시간)")
+
+        note = f"잔여 가능 {int(remain)}h"
+        if msgs:
+            note += " / " + "; ".join(msgs)
+
+        rows.append({
+            "연번": serial,
+            "직급": rank,
+            "성명": nm,
+            "분기 첫 달 수당시간(h)": round(a1, 2),
+            "첫 달 누계(h)": round(cume1, 2),
+            "분기 중간 달 수당시간(h)": round(a2, 2),
+            "중간 달 누계(h)": round(cume2, 2),
+            "분기 마지막 달 수당시간(h)": round(a3, 2),
+            "마지막 달 누계(h)": round(cume3, 2),
+            "비고": note,
+            # 표시용 내부 플래그(엑셀 서식에 활용)
+            "_adj1_m57": adj1_m57,
+            "_adj2_m57": adj2_m57,
+            "_adj3_m57": adj3_m57,
+            "_adj2_q90": adj2_q90,
+            "_adj3_q90": adj3_q90,
+        })
+
+    cols = [
+        "연번","직급","성명",
+        "분기 첫 달 수당시간(h)","첫 달 누계(h)",
+        "분기 중간 달 수당시간(h)","중간 달 누계(h)",
+        "분기 마지막 달 수당시간(h)","마지막 달 누계(h)",
+        "비고",
+        "_adj1_m57","_adj2_m57","_adj3_m57","_adj2_q90","_adj3_q90"
+    ]
+    out = pd.DataFrame(rows, columns=cols)
+    if "연번" in out.columns:
+        out["연번"] = pd.to_numeric(out["연번"], errors="coerce").astype("Int64")
+    return out
+
+# ----------------------------------
+# ④ 엑셀 저장: 누계 서식 + 57 강조 + 강제조정 셀 붉은 굵은체
+# ----------------------------------
+def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, dept: str | None) -> BytesIO:
+    # 화면에는 내부 플래그를 숨기지만, 서식 적용에는 활용
+    visible_cols = [c for c in df_full.columns if not str(c).startswith("_")]
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df_full[visible_cols].to_excel(writer, sheet_name="초과근무내역", index=False, startrow=4)
+        ws = writer.book["초과근무내역"]
+
+        header_row = 5
+        data_start = header_row + 1
+        last_row = ws.max_row
+        last_col = ws.max_column
+
+        # 제목
+        title = f"{(dept or '').strip()} 초과근무내역({year}년 {month}월)"
+        ws["A2"] = title
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+        ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["A2"].font = Font(size=20, bold=True)
+
+        # 헤더 중앙정렬
+        set_alignment(ws, range(header_row, header_row + 1), range(1, last_col + 1))
+
+        # 인덱스 기반 내부 플래그 접근을 위해 원본 df_full도 동일 정렬 가정
+        df_flags = df_full.reset_index(drop=True)
+
+        # 누계 컬럼 찾기
+        hdr_idx = {ws.cell(header_row, c).value: c for c in range(1, last_col + 1)}
+        cum_headers = ["첫 달 누계(h)", "중간 달 누계(h)", "마지막 달 누계(h)"]
+        cum_cols = [hdr_idx[h] for h in cum_headers if h in hdr_idx]
+
+        # 강제조정 대상 ‘수당시간(h)’ 컬럼 찾기
+        col_m1 = hdr_idx.get("분기 첫 달 수당시간(h)")
+        col_m2 = hdr_idx.get("분기 중간 달 수당시간(h)")
+        col_m3 = hdr_idx.get("분기 마지막 달 수당시간(h)")
+
+        # 누계 셀 스타일: 연파랑 + Bold, 값이 57이면 분홍 배경 + 빨강 폰트
+        for r in range(data_start, last_row + 1):
+            for c in cum_cols:
+                cell = ws.cell(r, c)
+                cell.fill = FILL_HEADER
+                cell.font = Font(bold=True)
+                try:
+                    val = float(str(cell.value))
+                    if abs(val - 57.0) < 1e-9:
+                        cell.fill = PINK
+                        cell.font = Font(bold=True, color="FF0000")
+                except Exception:
+                    pass
+
+        # 전체 데이터에서 값 57은 빨강 폰트
+        for r in range(data_start, last_row + 1):
+            for c in range(1, last_col + 1):
+                cell = ws.cell(r, c)
+                try:
+                    val = float(str(cell.value))
+                    if abs(val - 57.0) < 1e-9:
+                        cell.font = Font(
+                            name=cell.font.name,
+                            size=cell.font.size,
+                            bold=cell.font.bold,
+                            italic=cell.font.italic,
+                            vertAlign=cell.font.vertAlign,
+                            underline=cell.font.underline,
+                            strike=cell.font.strike,
+                            color="FF0000",
+                        )
+                except Exception:
+                    continue
+
+        # 강제조정 발생 월의 ‘수당시간(h)’ 셀을 빨강 굵은 폰트 처리
+        # 내부 플래그: _adj1_m57, _adj2_m57, _adj3_m57, _adj2_q90, _adj3_q90
+        # 표시 기준: 해당 월에 월57 또는 분기90 조정이 하나라도 True면 표시
+        for i in range(len(df_flags)):
+            r = data_start + i
+            if col_m1 and (bool(df_flags.iloc[i].get("_adj1_m57", False))):
+                ws.cell(r, col_m1).font = Font(bold=True, color="FF0000")
+            if col_m2 and (bool(df_flags.iloc[i].get("_adj2_m57", False)) or bool(df_flags.iloc[i].get("_adj2_q90", False))):
+                ws.cell(r, col_m2).font = Font(bold=True, color="FF0000")
+            if col_m3 and (bool(df_flags.iloc[i].get("_adj3_m57", False)) or bool(df_flags.iloc[i].get("_adj3_q90", False))):
+                ws.cell(r, col_m3).font = Font(bold=True, color="FF0000")
+
+        # 테두리
+        for rr in range(header_row, last_row + 1):
+            set_row_border(ws, rr, last_col, BORDER_THIN)
+
+        auto_col_width(ws)
+        for rr in range(1, ws.max_row + 1):
+            ws.row_dimensions[rr].height = None
+        ws.freeze_panes = ws["A6"]
+
+    buf.seek(0)
+    return buf
 
 # ----------------------------------
 # 탭: 관내출장여비
@@ -691,35 +913,24 @@ def tab_gwannae():
             return
 
         years = sorted(df["도착일자_dt"].dt.year.unique().tolist())
-        default_year = max(years) if years else datetime.now().year
+        _ = max(years) if years else datetime.now().year
 
         # Row 1: 부서명
         dept_name = st.text_input("부서명", value=st.session_state.get("DEPT_NAME", ""), key="dept_name")
         st.session_state["DEPT_NAME"] = dept_name
 
-        # Row 2: 출장연도, 출장월  ▶ 연/월 드롭다운(연도 목록에 전년도·후년도 1개씩 추가)
+        # Row 2: 출장연도, 출장월
         cY, cM = st.columns([1, 1])
-
-        # 데이터 기반 연도 목록
         years_in_data = sorted(df["도착일자_dt"].dt.year.dropna().unique().tolist())
         base_years = years_in_data if years_in_data else [datetime.now().year]
-
-        # 전년도·후년도 1개씩만 추가(연속 연도 채우지 않음)
         min_y, max_y = min(base_years), max(base_years)
         year_options = sorted(set(base_years + [min_y - 1, max_y + 1]))
-
-        # 기본 연도: 현재 연도가 목록에 있으면 현재 연도, 없으면 데이터 내 최댓값
         default_year = datetime.now().year if datetime.now().year in year_options else max(base_years)
 
         with cY:
-            sel_year = st.selectbox(
-                "출장연도",
-                options=year_options,
-                index=year_options.index(default_year),
-                key="yr_sel",
-                    )
+            sel_year = st.selectbox("출장연도", options=year_options,
+                                    index=year_options.index(default_year), key="yr_sel")
 
-        # 월 목록: 1~12 고정 목록. 기본값은 데이터에 있는 월 중 가장 큰 값, 없으면 현재 월.
         months_in_year = sorted(
             df[df["도착일자_dt"].dt.year == sel_year]["도착일자_dt"].dt.month.dropna().unique().tolist()
         )
@@ -728,12 +939,8 @@ def tab_gwannae():
         default_month_idx = month_options.index(default_month)
 
         with cM:
-            sel_month = st.selectbox(
-                "출장월",
-                options=month_options,
-                index=default_month_idx,
-                key="mo_sel",
-            )
+            sel_month = st.selectbox("출장월", options=month_options,
+                                     index=default_month_idx, key="mo_sel")
 
         df_ym = df[(df["도착일자_dt"].dt.year == sel_year) & (df["도착일자_dt"].dt.month == sel_month)]
         if df_ym.empty:
@@ -835,14 +1042,10 @@ def tab_gwannae():
                     st.session_state.get("DEPT_NAME", ""),
                 )
 
-                # 파일명: "{부서} 관내출장여비_지급조서(YYYY년 MM월).xlsx"
-                def _to_fullwidth_digits(s: str) -> str:
-                    return s.translate(str.maketrans("0123456789", "0123456789"))
-
                 dept = (st.session_state.get("DEPT_NAME") or "").strip() or "부서미지정"
                 year = st.session_state.get("SUMMARY_YEAR")
                 month = st.session_state.get("SUMMARY_MONTH")
-                fname = f"{dept} 관내출장여비_지급조서({_to_fullwidth_digits(str(year))}년 {_to_fullwidth_digits(str(month))}월).xlsx"
+                fname = f"{dept} 관내출장여비_지급조서({year}년 {month}월).xlsx"
 
                 st.download_button(
                     "💾 지급 조서 다운로드",
@@ -856,19 +1059,99 @@ def tab_gwannae():
             except Exception as e:
                 st.error(f"지급 조서 생성 오류: {e}")
 
-
 # ----------------------------------
-# 탭: 초과근무수당/업무추진비(더미)
+# 탭: 초과근무수당
 # ----------------------------------
 def tab_overtime():
     st.title("⏱️ 초과근무수당")
-    st.info("필요 규칙 제공 시 반영.")
+    st.markdown("---")
 
+    st.markdown("#### ① 업로드용 백데이터 준비")
+    st.markdown("📢 초과근무자 백데이터 서식 파일입니다．")
+    st.markdown("※ 연번|직급|성명|수당시간을 입력하세요.")
+    if os.path.exists(FORM_TEMPLATE_FILE_OVT):
+        with open(FORM_TEMPLATE_FILE_OVT, "rb") as f:
+            st.download_button(
+                "📂（서식）초과근무자 백데이터",
+                f,
+                file_name=FORM_TEMPLATE_FILE_OVT,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
+    st.markdown("---")
+    st.markdown("#### ② 파일 업로드")
+    st.markdown("📢 작성 완료한 ‘초과근무자 백데이터’ 파일을 업로드해주세요．")
+    tmpl_up = st.file_uploader("📂 초과근무자 백데이터 업로드 (.xlsx)", type=["xlsx"], key="ovt_tmpl_upload")
+    if tmpl_up is not None:
+        try:
+            st.session_state["OVT_TMPL_DF"] = read_template_dataframe(BytesIO(tmpl_up.getvalue()))
+            st.info("✅ 초과근무자 백데이터 업로드 완료")
+        except Exception as e:
+            st.error(f"🚫 초과근무자 백데이터 읽기 오류: {e}")
+
+    st.markdown("---")
+    st.markdown("#### ③ 데이터 가공 · 요약")
+    st.markdown("📢 부서명을 입력하고, 기준 연·월을 입력하세요.")
+    dept_name = st.text_input("부서명", value=st.session_state.get("OVT_DEPT_NAME", ""), key="ovt_dept_name")
+    st.session_state["OVT_DEPT_NAME"] = dept_name
+
+    cY, cM = st.columns([1, 1])
+    with cY:
+        sel_year = st.number_input("초과근무 연도", min_value=2000, max_value=2100,
+                                   value=int(st.session_state.get("OVT_YEAR", datetime.now().year)),
+                                   step=1, key="ovt_year_in")
+    with cM:
+        sel_month = st.number_input("초과근무 월", min_value=1, max_value=12,
+                                    value=int(st.session_state.get("OVT_MONTH", datetime.now().month)),
+                                    step=1, key="ovt_month_in")
+
+    btn = st.button("⌛ 가공 실행(백데이터→분기테이블)", type="primary",
+                    disabled=("OVT_TMPL_DF" not in st.session_state or st.session_state["OVT_TMPL_DF"].empty))
+
+    if btn:
+        try:
+            with st.spinner("처리 중..."):
+                df_quarter = build_ovt_quarter_df(st.session_state["OVT_TMPL_DF"], int(sel_year), int(sel_month))
+                # 화면 표시용: 내부 플래그 제거
+                view_df = df_quarter.drop(columns=[c for c in df_quarter.columns if str(c).startswith("_")])
+                st.dataframe(view_df, use_container_width=True)
+                st.session_state["OVT_Q_DF"] = df_quarter      # 플래그 포함본
+                st.session_state["OVT_VIEW_DF"] = view_df      # 표시본
+                st.session_state["OVT_YEAR"] = int(sel_year)
+                st.session_state["OVT_MONTH"] = int(sel_month)
+        except Exception as e:
+            st.error(f"오류: {e}")
+
+    st.markdown("---")
+    st.markdown("#### ④ 초과근무내역 엑셀 저장")
+    st.markdown("📢 상한시간을 초과한 경우, 빨간색으로 표시하였습니다.")
+    if "OVT_Q_DF" not in st.session_state:
+        st.info("③ 가공을 먼저 실행하세요.")
+    else:
+        try:
+            dept = (st.session_state.get("OVT_DEPT_NAME") or "").strip() or "부서미지정"
+            year = st.session_state.get("OVT_YEAR")
+            month = st.session_state.get("OVT_MONTH")
+            fname = f"{dept} 초과근무내역({year}년 {month}월).xlsx"
+
+            # 플래그가 포함된 전체 DF로 저장 → 서식 처리 가능
+            xbytes = export_ovt_view_with_format(st.session_state["OVT_Q_DF"], year, month, dept)
+            st.download_button(
+                "💾 초과근무내역 엑셀 저장",
+                data=xbytes,
+                file_name=fname,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        except Exception as e:
+            st.error(f"엑셀 생성 오류: {e}")
+
+# ----------------------------------
+# 탭: 업무추진비(더미)
+# ----------------------------------
 def tab_upchubi():
     st.title("🧾 업무추진비")
     st.info("필요 규정 제공 시 반영.")
-
 
 # ----------------------------------
 # 메인
@@ -883,7 +1166,6 @@ def main():
         tab_overtime()
     with tabs[2]:
         tab_upchubi()
-
 
 if __name__ == "__main__":
     main()
