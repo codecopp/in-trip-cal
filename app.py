@@ -844,8 +844,8 @@ def tab_gwannae():
 
     st.markdown("---")
     st.markdown("#### ② 파일 업로드")
-    st.markdown("📢 １．관내 출장여비 원본 업로드")
-    raw_up = st.file_uploader("📂 관내 출장여비 원본 업로드 (.xlsx)", type=["xlsx"], key="raw_upload")
+    st.markdown("📢 １．「인사랑」관내 출장여비 추출본 업로드")
+    raw_up = st.file_uploader("📂 「인사랑」관내 출장여비 추출본 업로드 (.xlsx)", type=["xlsx"], key="raw_upload")
     if raw_up is not None:
         try:
             st.session_state["RAW_DF"] = pd.read_excel(BytesIO(raw_up.getvalue()))
@@ -1129,6 +1129,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
