@@ -1124,9 +1124,8 @@ def main():
         tab_gwannae()
     with tabs[1]:
         tab_overtime()
-    with tabs[2]:
-        tab_upchubi()
 
 if __name__ == "__main__":
     main()
+
 
