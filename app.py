@@ -1094,7 +1094,7 @@ def tab_overtime():
     st.markdown("---")
     st.markdown("#### ④ 초과근무내역 엑셀 저장")
     st.markdown("📢 상한시간을 초과한 경우, 빨간색으로 표시하였습니다.")
-    st.markdown("📢 수기 또는 재난 비상근무 시간은 제외된 자료입니다.")
+    st.markdown("📢 수기 또는 재난 비상근무 시간은 제외된 자료이므로, 참고용으로 활용하세요.")
     if "OVT_Q_DF" not in st.session_state:
         st.info("③ 가공을 먼저 실행하세요.")
     else:
@@ -1129,6 +1129,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
