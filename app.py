@@ -1038,6 +1038,7 @@ def tab_overtime():
     st.markdown("#### ① 업로드용 백데이터 준비")
     st.markdown("📢 초과근무자 백데이터 서식 파일입니다．")
     st.markdown("※ 연번|직급|성명|수당시간을 입력하세요.")
+    st.markdown("※ 데이터 입력 시, 머릿글(헤더)은 수정하시면 안됩니다.")
     if os.path.exists(FORM_TEMPLATE_FILE_OVT):
         with open(FORM_TEMPLATE_FILE_OVT, "rb") as f:
             st.download_button(
@@ -1127,5 +1128,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
