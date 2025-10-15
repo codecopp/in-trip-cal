@@ -1,6 +1,6 @@
 # app.py
 # =======================================================================================
-# 목적: 관내출장여비 · 초과근무수당 중 ‘관내출장여비’ 처리 자동화
+# 목적: 관내출장여비 · 초과근무내역 중 ‘관내출장여비’ 처리 자동화
 #
 # [관내출장여비 로직]
 #  1) 업로드용 백데이터 준비
@@ -51,13 +51,11 @@
 
 # app.py
 # =======================================================================================
-# 목적: 관내출장여비 · 초과근무수당 자동화
+# 목적: 관내출장여비 · 초과근무내역 자동화
 # 변경사항(요청 반영):
-# - 지급조서(혼합 시트): '출장일수' COUNTA(F열~마지막 출장현황) 수식 계산
-# - 지급조서(혼합 시트): 출장현황 열 값 가운데 정렬
-# - 지급조서(혼합 시트): 지급단가 열 #,##0 서식 + 우측 정렬
-# - 초과근무수당: 비고에 강제조정 내역 포함(월57h/분기90h 캡 사유)
-# - 초과근무 저장: 누계 연파랑+Bold, 57값 빨강 폰트+연분홍 배경, 강제조정 월의 수당시간 빨강 Bold
+# - 초과근무내역: 입력을 '월'→'분기'로 변경, 표/엑셀 헤더를 분기별 월 표기로 변경
+# - 지급조서(혼합 시트): '출장일수' COUNTA 수식, 현황 가운데정렬, 지급단가 #,##0 우측정렬 유지
+# - 초과근무내역: 비고에 강제조정 내역 포함(월57h/분기90h 캡 사유), 누계 강조·57h 표시 유지
 # =======================================================================================
 
 from __future__ import annotations
@@ -77,7 +75,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 # ----------------------------------
 # 상수
 # ----------------------------------
-APP_TITLE = "관내출장여비 · 초과근무수당"
+APP_TITLE = "관내출장여비 · 초과근무내역"
 MANUAL_FILE = "인사랑 관내출장 내역 추출.pdf"
 FORM_TEMPLATE_FILE = "(서식) 출장자 백데이터.xlsx"
 
@@ -408,9 +406,6 @@ def auto_col_width(ws: Worksheet):
 
 # ----------------------------------
 # 혼합 DF → 엑셀 렌더링(출장)
-#  - 출장일수: COUNTA(첫 출장현황 ~ 마지막 출장현황)
-#  - 출장현황 값: 가운데 정렬
-#  - 지급단가: #,##0 서식 + 우측 정렬
 # ----------------------------------
 def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None, dept: str | None) -> BytesIO:
     buf = BytesIO()
@@ -421,7 +416,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
         header_row = 5
         data_start = header_row + 1
 
-        # 출장현황 헤더 병합 범위 탐지
+        # 출장현황 헤더 병합
         first_status_col, last_status_col = None, None
         for c in range(1, ws.max_column + 1):
             h = ws.cell(header_row, c).value
@@ -496,7 +491,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                 else:
                     break
 
-            # 출장일수 = COUNTA(첫 출장현황 ~ 마지막 출장현황)
+            # 출장일수 = COUNTA(현황 구간)
             if first_status_col is not None and last_status_col is not None and col_cnt:
                 sL = get_column_letter(first_status_col)
                 eL = get_column_letter(last_status_col)
@@ -506,7 +501,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
                     cnt_cell.number_format = "0"
                     cnt_cell.alignment = Alignment(horizontal="center", vertical="center")
 
-            # 지급단가 서식(#,##0) + 우측 정렬
+            # 지급단가 서식
             for rr in range(r, run_end + 1):
                 pay_cell = ws.cell(rr, col_pay)
                 pay_cell.number_format = "#,##0"
@@ -539,7 +534,7 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
 
             r = run_end + 1
 
-        # 출장현황 값 가운데 정렬(데이터 전행)
+        # 출장현황 가운데 정렬
         if first_status_col and last_status_col:
             for rr in range(data_start, last_row + 1):
                 for cc in range(first_status_col, last_status_col + 1):
@@ -601,6 +596,9 @@ def export_mixed_to_excel(df: pd.DataFrame, year: int | None, month: int | None,
 def _quarter_months(month: int) -> list[int]:
     q_start = ((int(month) - 1) // 3) * 3 + 1
     return [q_start, q_start + 1, q_start + 2]
+
+def _quarter_by_qnum(q: int) -> list[int]:
+    return [1,2,3] if q == 1 else [4,5,6] if q == 2 else [7,8,9] if q == 3 else [10,11,12]
 
 def _month_col_candidates(year: int, m: int) -> list[str]:
     cands = [
@@ -737,9 +735,22 @@ def build_ovt_quarter_df(tmpl_df: pd.DataFrame, year: int, month: int) -> pd.Dat
     return out
 
 # ----------------------------------
-# 초과근무 저장 서식
+# 초과근무 저장 서식(분기 표기 지원)
 # ----------------------------------
-def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, dept: str | None) -> BytesIO:
+def _rename_quarter_headers(df: pd.DataFrame, months: list[int]) -> pd.DataFrame:
+    m1, m2, m3 = months
+    mapping = {
+        "분기 첫 달 수당시간(h)": f"{m1}월 수당시간(h)",
+        "첫 달 누계(h)": f"{m1}월 누계(h)",
+        "분기 중간 달 수당시간(h)": f"{m2}월 수당시간(h)",
+        "중간 달 누계(h)": f"{m2}월 누계(h)",
+        "분기 마지막 달 수당시간(h)": f"{m3}월 수당시간(h)",
+        "마지막 달 누계(h)": f"{m3}월 누계(h)",
+    }
+    return df.rename(columns=mapping)
+
+def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, quarter: int, months: list[int], dept: str | None) -> BytesIO:
+    # 화면/엑셀에서는 숨김 플래그 제외
     visible_cols = [c for c in df_full.columns if not str(c).startswith("_")]
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -751,7 +762,8 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, de
         last_row = ws.max_row
         last_col = ws.max_column
 
-        title = f"{(dept or '').strip()} 초과근무내역({year}년 {month}월)"
+        # 제목: {연도}년 {분기}분기
+        title = f"{(dept or '').strip()} 초과근무내역({year}년 {quarter}분기)"
         ws["A2"] = title
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
         ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
@@ -759,14 +771,16 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, de
 
         set_alignment(ws, range(header_row, header_row + 1), range(1, last_col + 1))
 
-        df_flags = df_full.reset_index(drop=True)
+        # 누계/월 컬럼 찾기(분기 표기 반영)
         hdr_idx = {ws.cell(header_row, c).value: c for c in range(1, last_col + 1)}
-        cum_headers = ["첫 달 누계(h)", "중간 달 누계(h)", "마지막 달 누계(h)"]
+        m1, m2, m3 = months
+        cum_headers = [f"{m1}월 누계(h)", f"{m2}월 누계(h)", f"{m3}월 누계(h)"]
         cum_cols = [hdr_idx[h] for h in cum_headers if h in hdr_idx]
-        col_m1 = hdr_idx.get("분기 첫 달 수당시간(h)")
-        col_m2 = hdr_idx.get("분기 중간 달 수당시간(h)")
-        col_m3 = hdr_idx.get("분기 마지막 달 수당시간(h)")
+        col_m1 = hdr_idx.get(f"{m1}월 수당시간(h)")
+        col_m2 = hdr_idx.get(f"{m2}월 수당시간(h)")
+        col_m3 = hdr_idx.get(f"{m3}월 수당시간(h)")
 
+        # 누계 강조 및 57h 표시
         for r in range(data_start, last_row + 1):
             for c in cum_cols:
                 cell = ws.cell(r, c)
@@ -780,6 +794,7 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, de
                 except Exception:
                     pass
 
+        # 값이 57이면 빨강 폰트
         for r in range(data_start, last_row + 1):
             for c in range(1, last_col + 1):
                 cell = ws.cell(r, c)
@@ -799,6 +814,9 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, de
                 except Exception:
                     continue
 
+        # 강제조정 월 빨강 Bold
+        # df_full는 숨김 플래그 포함. 화면에 쓴 순서와 index를 맞추기 위해 reset_index 사용.
+        df_flags = df_full.reset_index(drop=True)
         for i in range(len(df_flags)):
             r = data_start + i
             if col_m1 and (bool(df_flags.iloc[i].get("_adj1_m57", False))):
@@ -808,6 +826,7 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, month: int, de
             if col_m3 and (bool(df_flags.iloc[i].get("_adj3_m57", False)) or bool(df_flags.iloc[i].get("_adj3_q90", False))):
                 ws.cell(r, col_m3).font = Font(bold=True, color="FF0000")
 
+        # 테두리·열너비·고정
         for rr in range(header_row, last_row + 1):
             set_row_border(ws, rr, last_col, BORDER_THIN)
 
@@ -1029,10 +1048,10 @@ def tab_gwannae():
                 st.error(f"지급 조서 생성 오류: {e}")
 
 # ----------------------------------
-# 탭: 초과근무수당
+# 탭: 초과근무내역  ← 분기 선택/헤더 월 표기 지원
 # ----------------------------------
 def tab_overtime():
-    st.title("⏱️ 초과근무수당")
+    st.title("⏱️ 초과근무내역")
     st.markdown("---")
 
     st.markdown("#### ① 업로드용 백데이터 준비")
@@ -1061,19 +1080,25 @@ def tab_overtime():
 
     st.markdown("---")
     st.markdown("#### ③ 데이터 가공 · 요약")
-    st.markdown("📢 부서명을 입력하고, 기준 연·월을 입력하세요.")
+    st.markdown("📢 부서명과 기준 연·분기를 입력하세요.")
     dept_name = st.text_input("부서명", value=st.session_state.get("OVT_DEPT_NAME", ""), key="ovt_dept_name")
     st.session_state["OVT_DEPT_NAME"] = dept_name
 
-    cY, cM = st.columns([1, 1])
+    cY, cQ = st.columns([1, 1])
     with cY:
         sel_year = st.number_input("초과근무 연도", min_value=2000, max_value=2100,
                                    value=int(st.session_state.get("OVT_YEAR", datetime.now().year)),
                                    step=1, key="ovt_year_in")
-    with cM:
-        sel_month = st.number_input("초과근무 월", min_value=1, max_value=12,
-                                    value=int(st.session_state.get("OVT_MONTH", datetime.now().month)),
-                                    step=1, key="ovt_month_in")
+    with cQ:
+        q_labels = {
+            1: "1분기(1~3월)", 2: "2분기(4~6월)", 3: "3분기(7~9월)", 4: "4분기(10~12월)"
+        }
+        q_options = [1, 2, 3, 4]
+        default_q = int(st.session_state.get("OVT_QTR", ((datetime.now().month - 1)//3)+1))
+        sel_quarter = st.selectbox("초과근무 분기", options=q_options,
+                                   index=q_options.index(default_q),
+                                   format_func=lambda x: q_labels[x],
+                                   key="ovt_quarter_in")
 
     btn = st.button("⌛ 가공 실행(백데이터→분기테이블)", type="primary",
                     disabled=("OVT_TMPL_DF" not in st.session_state or st.session_state["OVT_TMPL_DF"].empty))
@@ -1081,13 +1106,19 @@ def tab_overtime():
     if btn:
         try:
             with st.spinner("처리 중..."):
-                df_quarter = build_ovt_quarter_df(st.session_state["OVT_TMPL_DF"], int(sel_year), int(sel_month))
-                view_df = df_quarter.drop(columns=[c for c in df_quarter.columns if str(c).startswith("_")])
+                months = _quarter_by_qnum(int(sel_quarter))         # [m1, m2, m3]
+                ref_month = months[0]                               # 내부 계산용 기준월
+                df_quarter = build_ovt_quarter_df(st.session_state["OVT_TMPL_DF"], int(sel_year), int(ref_month))
+                # 화면/엑셀 표기를 월 헤더로 치환
+                df_quarter_named = _rename_quarter_headers(df_quarter, months)
+                view_df = df_quarter_named.drop(columns=[c for c in df_quarter_named.columns if str(c).startswith("_")])
+
                 st.dataframe(view_df, use_container_width=True)
-                st.session_state["OVT_Q_DF"] = df_quarter
+                st.session_state["OVT_Q_DF"] = df_quarter_named      # 숨김 플래그 포함, 헤더 치환 완료본
                 st.session_state["OVT_VIEW_DF"] = view_df
                 st.session_state["OVT_YEAR"] = int(sel_year)
-                st.session_state["OVT_MONTH"] = int(sel_month)
+                st.session_state["OVT_QTR"] = int(sel_quarter)
+                st.session_state["OVT_Q_MONTHS"] = months
         except Exception as e:
             st.error(f"오류: {e}")
 
@@ -1100,11 +1131,12 @@ def tab_overtime():
     else:
         try:
             dept = (st.session_state.get("OVT_DEPT_NAME") or "").strip() or "부서미지정"
-            year = st.session_state.get("OVT_YEAR")
-            month = st.session_state.get("OVT_MONTH")
-            fname = f"{dept} 초과근무내역({year}년 {month}월).xlsx"
+            year = int(st.session_state.get("OVT_YEAR"))
+            quarter = int(st.session_state.get("OVT_QTR"))
+            months = st.session_state.get("OVT_Q_MONTHS", _quarter_by_qnum(quarter))
 
-            xbytes = export_ovt_view_with_format(st.session_state["OVT_Q_DF"], year, month, dept)
+            fname = f"{dept} 초과근무내역({year}년 {quarter}분기).xlsx"
+            xbytes = export_ovt_view_with_format(st.session_state["OVT_Q_DF"], year, quarter, months, dept)
             st.download_button(
                 "💾 초과근무내역 엑셀 저장",
                 data=xbytes,
@@ -1121,7 +1153,7 @@ def tab_overtime():
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.title(APP_TITLE)
-    tabs = st.tabs(["관내출장여비", "초과근무수당"])
+    tabs = st.tabs(["관내출장여비", "초과근무내역"])
     with tabs[0]:
         tab_gwannae()
     with tabs[1]:
@@ -1129,12 +1161,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
 
