@@ -1,61 +1,50 @@
 # app.py
 # =======================================================================================
-# 목적: 관내출장여비 · 초과근무내역 중 ‘관내출장여비’ 처리 자동화
+# 목적: 하나의 앱에서 ① 관내출장여비, ② 초과근무내역, ③ 자료 수합(머릿글 유지 수합)을 처리
 #
-# [관내출장여비 로직]
-#  1) 업로드용 백데이터 준비
-#     - 사용자가 ‘인사랑’에서 추출한 원본(.xlsx)과 (서식) 출장자 백데이터(.xlsx) 준비
+# [탭 안내 · 상세 로직 주석]
+# ───────────────────────────────────────────────────────────────────────────────────────
+# ■ ① 관내출장여비
+#   1) 업로드용 백데이터 준비
+#      - (인사랑) 원본(.xlsx)과 (서식) 출장자 백데이터(.xlsx) 안내/다운로드 제공
+#   2) 파일 업로드
+#      - 원본 및 (서식) 업로드
+#   3) 데이터 가공·요약
+#      - 백데이터 시트 생성(병합 해제, 여분 삭제, 빈 이름 행 삭제)
+#      - DataFrame 변환 → 규칙 적용(4시간 구분, 1시간 미만, 지급단가 결정) → "가공" 시트 작성
+#      - UI에서 연/월/부서 선택, 특정 출장자/단가별 날짜 ‘제외/포함’ 규칙 누적 → 요약표 생성
+#   4) 지급 조서 생성·다운로드
+#      - 요약표 + (서식) 백데이터를 결합해 혼합 DF 작성(20,000/10,000 블록 보장)
+#      - ‘혼합’ 시트로 출력
+#      - 서식 후처리(머릿글 병합, 금액서식, 합계열 삽입, 총합계, 푸터, 열너비 자동 등)
 #
-#  2) 파일 업로드
-#     - 여비 원본 파일과 출장자 백데이터 파일 업로드 
+# ■ ② 초과근무내역
+#   1) 업로드용 백데이터 준비
+#      - (서식) 초과근무자 백데이터 안내/다운로드 제공
+#   2) 파일 업로드
+#      - (서식) 업로드
+#   3) 데이터 가공·요약
+#      - 기준 연/분기 입력
+#      - 분기 월(3개월)별 수당시간을 월57h/분기90h 상한 규칙으로 보정
+#      - 강제조정 비고(월57h/분기90h 사유) 포함, 누계 강조, 57h 표시
+#   4) 엑셀 저장
+#      - 화면 표기 그대로 엑셀로 저장(머릿글, 테두리, 열너비, 고정창 등 적용)
 #
-#  3) 데이터 가공 · 요약
-#     - 가) 여비 원본을 병합 해제, 여분 행·열 제거, 빈 이름 행 삭제 → "백데이터" 시트 생성
-#     - 나) "백데이터"를 DataFrame으로 변환 → 규칙 적용(4시간 구분, 1시간 미만, 지급단가 결정) → "가공" 시트 저장, "요약" 시트 헤더 생성
-#           - 4시간이상 & 차량 미사용 = 2만원
-#           - 4시간이상 & 차량 사용   = 1만원
-#           - 4시간미만 & 차량 미사용 = 1만원
-#           - 4시간미만 & 차량 미사용 =   0원
-#     - 다) "가공"시트 데이터를 활용해서, 요약 표 재구성 
-#           - UI에서 연·월·부서 선택, 특정 출장자/단가별 날짜를 ‘제외’ 또는 ‘포함’ 규칙으로 누적
-#           - 규칙을 반영한 월별 요약표(성명, 지급단가, 출장일수, 여비합계, 출장현황) 생성
-#
-#  4) 지급 조서 생성 · 다운로드
-#     - (서식) 출장자 백데이터와 요약표를 결합해 혼합 DF 생성(각 인원에 대해 20,000원/10,000원 블록 보장)
-#     - 혼합 DF를 ‘혼합’ 시트에 5행 헤더로 출력
-#     - 서식 후처리:
-#         · 헤더 = [연번, 직급, 성명, 은행명, 계좌번호, 출장현황(가변), 출장일수, 지급단가, 소계, 합계]
-#         · A2: "{부서} 관내 출장여비 지급내역({연도}년 {월}월)" 입력 후 '합계' 열까지 병합, 글자크기 20
-#         · 데이터 정렬 기준은 백데이터 파일에 입력된 [직급, 성명, 은행명, 계좌번호] 데이터를 가져온 후, [출장현황, 출장일자, 지급단가, 소계] 를 매칭하여 입력 
-#         · ‘출장현황*’ 헤더 병합 ex) 출장현황1, 2, 3 등을 하나의 셀로 병
-#         · ‘소계’ 오른쪽에 ‘합계’ 열 삽입 후 합계 계산
-#         · 헤더 행(5행) 배경 연한 파랑
-#         · 금액 열(지급단가, 소계, 합계) 오른쪽 정렬, 기타 가운데 정렬
-#         · 동일 인적사항 블록 병합 및 합계·연번 세로 병합 
-#         · 20,000/10,000 단가 강제 존재(없으면 더미 행 추가) 
-#         · '합계' 헤더 윗칸(4행)에 "(단위 : 원)" 표기 및 우측 정렬
-#         · 마지막 데이터행 아래 총합계 행(B열 '합계', 합계열 SUM, 연한 파랑 배경) 
-#         · 총합계 바로 아래 1행은 무테(테두리 없음) 
-#         · 마지막 데이터행 기준 3칸 아래부터 3행(무테, 합계열까지 병합) 
-#         · 상기와 같이 내역을 확인함 
-#         · yyyy. m. (출장월+1, 12월이면 익년 1월) 
-#         · 확인자 : {부서명} 행정○급 ○○○ (인) 
-#         · 표 너비·높이 자동(열 너비 계산, 행 높이는 자동)
-#
-#  4) 화면 구성
-#     - ① 업로드 안내 및 템플릿 다운로드
-#     - ② 파일 업로드(원본, (서식) 출장자 백데이터)
-#     - ③ 가공 실행 및 요약 편집(규칙 누적/초기화)
-#     - ④ 지급 조서 다운로드(파일명: {부서} 관내출장여비_지급조서(YYYY년 MM월).xlsx)
-# =======================================================================================
-
-# app.py
-# =======================================================================================
-# 목적: 관내출장여비 · 초과근무내역 자동화
-# 변경사항(요청 반영):
-# - 초과근무내역: 입력을 '월'→'분기'로 변경, 표/엑셀 헤더를 분기별 월 표기로 변경
-# - 지급조서(혼합 시트): '출장일수' COUNTA 수식, 현황 가운데정렬, 지급단가 #,##0 우측정렬 유지
-# - 초과근무내역: 비고에 강제조정 내역 포함(월57h/분기90h 캡 사유), 누계 강조·57h 표시 유지
+# ■ ③ 자료 수합(머릿글 유지 수합 도구)
+#   1) 여러 엑셀 업로드(xls/xlsx)
+#   2) 머릿글 범위 설정(첫 행~마지막 행, 1-based)  ※ 기본: 1~1
+#   3) 데이터 범위 설정(시작 행~마지막 행 또는 끝까지, 1-based)
+#   4) 수합·정규화
+#      - 머릿글 블록 ffill로 병합 흔적 평면화
+#      - 우측 연속 공란 제거로 “실사용 열 너비”만 사용
+#      - 컬럼명은 위→아래 텍스트를 '_'로 결합, 중복명 _1, _2 부여
+#      - 본문 뒤에 ‘출처’ 열 추가
+#   5) 대표 파일의 머릿글 병합 모양을 상대좌표로 캡처
+#   6) 결과 엑셀 생성
+#      - 병합 머릿글 복원 + ‘출처’ 머릿글도 동일 높이로 병합
+#      - 본문 기입, ‘출처’ 열 연한 파랑, 열 너비 추정
+#   7) 다운로드
+#      - 파일명: “수합 완료본_yymmdd_hhmm.xlsx”(KST)
 # =======================================================================================
 
 from __future__ import annotations
@@ -63,21 +52,24 @@ from __future__ import annotations
 import os
 import re
 from io import BytesIO
-from datetime import datetime, timedelta
+from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Alignment, Border, Side, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.worksheet.worksheet import Worksheet
 
 # ----------------------------------
-# 상수
+# 앱 상수
 # ----------------------------------
-APP_TITLE = "관내출장여비 · 초과근무내역"
+APP_TITLE = "관내출장여비 · 초과근무내역 · 자료 수합"
 MANUAL_FILE = "인사랑 관내출장 내역 추출.pdf"
 FORM_TEMPLATE_FILE = "(서식) 출장자 백데이터.xlsx"
+FORM_TEMPLATE_FILE_OVT = "(서식) 초과근무자 백데이터.xlsx"
 
 TARGET_HEADERS = ["순번", "출장자", "도착일자", "총출장시간", "차량",
                   "4시간구분", "1시간미만", "지급단가", "여비금액"]
@@ -88,7 +80,6 @@ THIN_SIDE = Side(style="thin", color="000000")
 BORDER_THIN = Border(top=THIN_SIDE, bottom=THIN_SIDE, left=THIN_SIDE, right=THIN_SIDE)
 PINK = PatternFill(fill_type="solid", start_color="FFC0CB", end_color="FFC0CB")          # 연한 분홍
 
-FORM_TEMPLATE_FILE_OVT = "(서식) 초과근무자 백데이터.xlsx"
 OVT_MONTH_CAP = 57.0
 OVT_QTR_CAP = 90.0
 
@@ -99,11 +90,14 @@ try:
     from zoneinfo import ZoneInfo
     KST = ZoneInfo("Asia/Seoul")
 except ImportError:
-    from pytz import timezone
-    KST = timezone("Asia/Seoul")
+    from pytz import timezone as _tz
+    KST = _tz("Asia/Seoul")
 
 def kst_timestamp() -> str:
     return datetime.now(KST).strftime("%y%m%d_%H%M")
+
+def _kst_now() -> datetime:
+    return datetime.now(timezone(timedelta(hours=9)))
 
 # ----------------------------------
 # 규칙/판정 보조 상수·함수(출장)
@@ -750,7 +744,6 @@ def _rename_quarter_headers(df: pd.DataFrame, months: list[int]) -> pd.DataFrame
     return df.rename(columns=mapping)
 
 def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, quarter: int, months: list[int], dept: str | None) -> BytesIO:
-    # 화면/엑셀에서는 숨김 플래그 제외
     visible_cols = [c for c in df_full.columns if not str(c).startswith("_")]
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -762,7 +755,7 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, quarter: int, 
         last_row = ws.max_row
         last_col = ws.max_column
 
-        # 제목: {연도}년 {분기}분기
+        # 제목
         title = f"{(dept or '').strip()} 초과근무내역({year}년 {quarter}분기)"
         ws["A2"] = title
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
@@ -771,7 +764,6 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, quarter: int, 
 
         set_alignment(ws, range(header_row, header_row + 1), range(1, last_col + 1))
 
-        # 누계/월 컬럼 찾기(분기 표기 반영)
         hdr_idx = {ws.cell(header_row, c).value: c for c in range(1, last_col + 1)}
         m1, m2, m3 = months
         cum_headers = [f"{m1}월 누계(h)", f"{m2}월 누계(h)", f"{m3}월 누계(h)"]
@@ -815,7 +807,6 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, quarter: int, 
                     continue
 
         # 강제조정 월 빨강 Bold
-        # df_full는 숨김 플래그 포함. 화면에 쓴 순서와 index를 맞추기 위해 reset_index 사용.
         df_flags = df_full.reset_index(drop=True)
         for i in range(len(df_flags)):
             r = data_start + i
@@ -838,9 +829,171 @@ def export_ovt_view_with_format(df_full: pd.DataFrame, year: int, quarter: int, 
     buf.seek(0)
     return buf
 
-# ----------------------------------
-# 탭: 관내출장여비
-# ----------------------------------
+# =======================================================================================
+# ▲ 여기까지 ① 관내출장여비 + ② 초과근무내역 공용/로직
+# ▼ 아래부터 ③ 자료 수합(머릿글 유지 수합 도구) 로직
+# =======================================================================================
+
+def _norm_cell(x) -> str:
+    if x is None:
+        return ""
+    s = str(x).replace("\n", " ").strip()
+    s = re.sub(r"\s+", " ", s)
+    return "" if s.lower().startswith("unnamed") else s
+
+def _make_unique(cols):
+    seen, out = {}, []
+    for c in cols:
+        k = (str(c) if c is not None else "").strip() or "COL"
+        k = re.sub(r"\s+", " ", k)
+        if k not in seen:
+            seen[k] = 0
+            out.append(k)
+        else:
+            seen[k] += 1
+            out.append(f"{k}_{seen[k]}")
+    return out
+
+def _effective_header_width(head_df: pd.DataFrame) -> int:
+    if head_df.empty:
+        return 0
+    used = head_df.applymap(lambda x: bool(str(x).strip()) and str(x).lower() != "nan")
+    cols_with_any = [i for i, has in enumerate(used.any(axis=0).tolist()) if has]
+    return (max(cols_with_any) + 1) if cols_with_any else 0
+
+def read_with_manual_rows(
+    file_obj,
+    header_first_row: int,
+    header_last_row: int,
+    data_start_row: int,
+    data_end_row: Optional[int],
+    sheet_index: int = 0,
+) -> pd.DataFrame:
+    raw = pd.read_excel(file_obj, sheet_name=sheet_index, header=None, dtype=str)
+    if raw.empty:
+        return pd.DataFrame()
+
+    h_start = header_first_row - 1
+    h_end_excl = header_last_row
+    hb = raw.iloc[h_start:h_end_excl, :].copy().ffill(axis=1).ffill(axis=0).astype(str)
+
+    ncols_eff = _effective_header_width(hb)
+    if ncols_eff == 0:
+        return pd.DataFrame()
+    hb = hb.iloc[:, :ncols_eff]
+
+    cols = []
+    for c in range(ncols_eff):
+        parts = [p.strip() for p in hb.iloc[:, c].tolist() if p and p.strip().lower() != "nan"]
+        parts = [p for p in parts if not p.lower().startswith("unnamed")]
+        name = re.sub(r"\s+", " ", "_".join(parts)).strip() or f"COL{c+1}"
+        cols.append(name)
+    cols = _make_unique(cols)
+
+    d_start = data_start_row - 1
+    d_end_excl = None if data_end_row is None else data_end_row
+    body = raw.iloc[d_start:d_end_excl, :ncols_eff].copy()
+    body.columns = cols
+    body = body.dropna(how="all").reset_index(drop=True)
+    return body
+
+def capture_merged_header_shape_manual(
+    xls_bytes: bytes,
+    header_first_row: int,
+    header_last_row: int,
+    sheet_index: int = 0,
+):
+    df_all = pd.read_excel(BytesIO(xls_bytes), sheet_name=sheet_index, header=None, dtype=str)
+    top = header_first_row
+    bottom = header_last_row
+    head = df_all.iloc[top - 1: bottom, :].copy().ffill(axis=1).ffill(axis=0).astype(str)
+    ncols_eff = _effective_header_width(head)
+    head = head.iloc[:, :ncols_eff].replace({"nan": "", "NaN": ""})
+    head_vals = [[ _norm_cell(x) for x in head.iloc[r].tolist()] for r in range(len(head))]
+
+    wb = load_workbook(BytesIO(xls_bytes), data_only=True)
+    ws = wb.worksheets[sheet_index]
+    merges_rel = []
+    for rng in ws.merged_cells.ranges:
+        if rng.max_row < top or rng.min_row > bottom:
+            continue
+        if rng.min_col > ncols_eff:
+            continue
+        c2 = min(rng.max_col, ncols_eff)
+        r1 = rng.min_row - top + 1
+        r2 = rng.max_row - top + 1
+        merges_rel.append((r1, rng.min_col, r2, c2))
+
+    return head_vals, merges_rel, ncols_eff
+
+def write_with_merged_header_and_source(
+    df: pd.DataFrame,
+    head_vals,
+    merges_rel,
+    ncols_eff: int,
+    source_col_name: str = "출처",
+) -> Workbook:
+    wb = Workbook()
+    ws = wb.active
+
+    hrows = len(head_vals)
+    data_cols = len([c for c in df.columns if c != source_col_name])
+    ncols_final = data_cols + 1  # + '출처'
+
+    # 1) 머릿글 텍스트 채우기
+    for r in range(hrows):
+        row_vals = head_vals[r][:data_cols] + [""]
+        for c in range(1, ncols_final + 1):
+            ws.cell(r + 1, c, row_vals[c - 1] if c - 1 < len(row_vals) else "")
+
+    # 2) 기존 병합 재적용
+    limit = min(ncols_eff, data_cols)
+    for (r1, c1, r2, c2) in merges_rel:
+        if c1 <= limit:
+            ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=min(c2, limit))
+
+    # 3) '출처' 머릿글 배치 및 병합
+    src_col_idx = ncols_final
+    ws.cell(1, src_col_idx, source_col_name)
+    if hrows > 1:
+        ws.merge_cells(start_row=1, start_column=src_col_idx, end_row=hrows, end_column=src_col_idx)
+
+    # 4) 머릿글 스타일
+    align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    font_b = Font(bold=True)
+    for r in range(1, hrows + 1):
+        for c in range(1, ncols_final + 1):
+            cell = ws.cell(r, c)
+            cell.alignment = align
+            cell.font = font_b
+
+    # 5) 본문 + 테두리 + '출처' 연파랑
+    thin = Side(style="thin", color="000000")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    fill_src = PatternFill("solid", fgColor="DDEBF7")
+
+    start_row = hrows + 1
+    for i, row in enumerate(dataframe_to_rows(df, index=False, header=False), start=start_row):
+        for j, v in enumerate(row[:data_cols], start=1):
+            ws.cell(i, j, v).border = border
+        ws.cell(i, src_col_idx, row[data_cols]).fill = fill_src
+        ws.cell(i, src_col_idx).border = border
+
+    # 6) 열 너비 추정
+    preview_end = min(start_row + max(50, len(df)), ws.max_row)
+    for c in range(1, ncols_final + 1):
+        maxlen = 6
+        for r in range(1, preview_end + 1):
+            v = ws.cell(r, c).value
+            maxlen = max(maxlen, len(str(v)) if v is not None else 0)
+        ws.column_dimensions[get_column_letter(c)].width = min(60, maxlen + 2)
+
+    return wb
+
+# =======================================================================================
+# 탭 UI 함수
+# =======================================================================================
+
 def tab_gwannae():
     st.title("🚗 관내출장여비 정산")
     st.markdown("---")
@@ -1047,9 +1200,6 @@ def tab_gwannae():
             except Exception as e:
                 st.error(f"지급 조서 생성 오류: {e}")
 
-# ----------------------------------
-# 탭: 초과근무내역  ← 분기 선택/헤더 월 표기 지원
-# ----------------------------------
 def tab_overtime():
     st.title("⏱️ 초과근무내역")
     st.markdown("---")
@@ -1090,9 +1240,7 @@ def tab_overtime():
                                    value=int(st.session_state.get("OVT_YEAR", datetime.now().year)),
                                    step=1, key="ovt_year_in")
     with cQ:
-        q_labels = {
-            1: "1분기(1~3월)", 2: "2분기(4~6월)", 3: "3분기(7~9월)", 4: "4분기(10~12월)"
-        }
+        q_labels = {1: "1분기(1~3월)", 2: "2분기(4~6월)", 3: "3분기(7~9월)", 4: "4분기(10~12월)"}
         q_options = [1, 2, 3, 4]
         default_q = int(st.session_state.get("OVT_QTR", ((datetime.now().month - 1)//3)+1))
         sel_quarter = st.selectbox("초과근무 분기", options=q_options,
@@ -1109,12 +1257,11 @@ def tab_overtime():
                 months = _quarter_by_qnum(int(sel_quarter))         # [m1, m2, m3]
                 ref_month = months[0]                               # 내부 계산용 기준월
                 df_quarter = build_ovt_quarter_df(st.session_state["OVT_TMPL_DF"], int(sel_year), int(ref_month))
-                # 화면/엑셀 표기를 월 헤더로 치환
                 df_quarter_named = _rename_quarter_headers(df_quarter, months)
                 view_df = df_quarter_named.drop(columns=[c for c in df_quarter_named.columns if str(c).startswith("_")])
 
                 st.dataframe(view_df, use_container_width=True)
-                st.session_state["OVT_Q_DF"] = df_quarter_named      # 숨김 플래그 포함, 헤더 치환 완료본
+                st.session_state["OVT_Q_DF"] = df_quarter_named
                 st.session_state["OVT_VIEW_DF"] = view_df
                 st.session_state["OVT_YEAR"] = int(sel_year)
                 st.session_state["OVT_QTR"] = int(sel_quarter)
@@ -1147,20 +1294,102 @@ def tab_overtime():
         except Exception as e:
             st.error(f"엑셀 생성 오류: {e}")
 
+def tab_collect():
+    st.title("📊 자료 수합(엑셀 파일)")
+    st.markdown("---")
+
+    # ① 업로드
+    st.markdown("### ① 수합 대상 파일 업로드")
+    files = st.file_uploader("엑셀 파일 복수 선택 가능", type=["xls", "xlsx"], accept_multiple_files=True)
+
+    # ② 머릿글 범위(세로)
+    st.markdown("### ② 머릿글 범위 설정")
+    st.markdown("📢 수합 파일 내 머릿글의 범위를 먼저 확인해주세요")
+    header_first = st.number_input("머릿글 첫 행", min_value=1, value=1, step=1)   # 기본 1
+    header_last  = st.number_input("머릿글 마지막 행", min_value=1, value=1, step=1)  # 기본 1
+    st.caption("예) 머릿글이 1~2행이면 첫 행=1, 마지막 행=2")
+    st.caption("예) 머릿글이   1행이면 첫 행=1, 마지막 행=1")
+  
+    # ③ 데이터 범위(세로)
+    st.markdown("### ③ 수합 데이터 범위 설정")
+    st.markdown("📢 수합 파일 내 수합 데이터 범위를 먼저 확인해주세요")  
+    data_start = st.number_input("데이터 시작 행", min_value=1, value=2, step=1)
+    to_end = st.checkbox("데이터 마지막 행 = 파일 끝까지", value=True)
+    data_end = None
+    if not to_end:
+        data_end = st.number_input("데이터 마지막 행", min_value=1, value=max(2, data_start), step=1)
+
+    st.caption("데이터 마지막 행을 직접 지정하고 싶으시면, '체크 해제'하세요")
+    st.caption("데이터 범위 지정은 업로드된 파일들에 공통으로 적용됩니다.")
+
+  
+    # 실행
+    if files:
+        if header_last < header_first:
+            st.error("머릿글 마지막 행은 머릿글 첫 행보다 크거나 같아야 합니다.")
+            st.stop()
+        if data_start <= header_last:
+            st.error("데이터 시작 행은 머릿글 마지막 행보다 커야 합니다.")
+            st.stop()
+        if data_end is not None and data_end < data_start:
+            st.error("데이터 마지막 행은 데이터 시작 행보다 크거나 같아야 합니다.")
+            st.stop()
+
+        blobs = [f.read() for f in files]
+        names = [f.name for f in files]
+
+        head_vals, merges_rel, ncols_eff = capture_merged_header_shape_manual(
+            blobs[0], header_first_row=header_first, header_last_row=header_last
+        )
+
+        dfs = []
+        for name, b in zip(names, blobs):
+            df = read_with_manual_rows(BytesIO(b), header_first, header_last, data_start, data_end)
+            if not df.empty:
+                df["출처"] = name
+                cols = [c for c in df.columns if c != "출처"] + ["출처"]
+                df = df[cols]
+                dfs.append(df)
+
+        if not dfs:
+            st.error("수합 가능한 데이터가 없습니다.")
+        else:
+            merged = pd.concat(dfs, ignore_index=True)
+
+            wb = write_with_merged_header_and_source(
+                merged, head_vals, merges_rel, ncols_eff, source_col_name="출처"
+            )
+            buf = BytesIO(); wb.save(buf); buf.seek(0)
+
+            st.markdown("### ④ 수합 완료본 다운로드")
+            ts = _kst_now().strftime("%y%m%d_%H%M")  # yymmdd_hhmm
+            out_name = f"수합 완료본_{ts}.xlsx"
+            st.download_button(
+                "💾 수합결과(병합 머릿글 + '출처' 포함) 다운로드",
+                data=buf.getvalue(),
+                file_name=out_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+            st.success(f"수합 완료: {len(dfs)}개 파일, {len(merged):,}행")
+            st.dataframe(merged.head(50), use_container_width=True)
+    else:
+        st.info("엑셀 파일을 업로드하세요.")
+
 # ----------------------------------
 # 메인
 # ----------------------------------
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.title(APP_TITLE)
-    tabs = st.tabs(["관내출장여비", "초과근무내역"])
+    tabs = st.tabs(["관내출장여비", "초과근무내역", "자료 수합"])
     with tabs[0]:
         tab_gwannae()
     with tabs[1]:
         tab_overtime()
+    with tabs[2]:
+        tab_collect()
 
 if __name__ == "__main__":
     main()
-
-
-
