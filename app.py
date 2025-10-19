@@ -1368,7 +1368,7 @@ def tab_collect():
             ts = _kst_now().strftime("%y%m%d_%H%M")  # yymmdd_hhmm
             out_name = f"수합 완료본_{ts}.xlsx"
             st.download_button(
-                "💾 수합결과(병합 머릿글 + '출처' 포함) 다운로드",
+                "💾 수합 완료본 다운로드",
                 data=buf.getvalue(),
                 file_name=out_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1396,6 +1396,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
