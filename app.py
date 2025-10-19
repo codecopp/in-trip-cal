@@ -102,7 +102,7 @@ def _kst_now() -> datetime:
 # ----------------------------------
 # 규칙/판정 보조 상수·함수(출장)
 # ----------------------------------
-_HOURS_GE4 = set(map(str, range(4, 24))))
+_HOURS_GE4 = set(map(str, range(4, 24)))
 _HOURS_LT4 = {"1", "2", "3"}
 
 def _extract_hour_token(s: str) -> str | None:
@@ -1404,3 +1404,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
