@@ -1005,6 +1005,7 @@ def tab_gwannae():
 
     st.markdown("📢 ２． 출장자 백데이터 서식 파일입니다．")
     st.markdown("※ 연번|직급|성명|은행명|계좌번호를 입력한 후, 파일을 저장해주세요．")
+    st.markdown("※ 입력된 데이터를 바탕으로, 지급조서가 생성됩니다.")
     if os.path.exists(FORM_TEMPLATE_FILE):
         with open(FORM_TEMPLATE_FILE, "rb") as f:
             st.download_button(
@@ -1393,5 +1394,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
