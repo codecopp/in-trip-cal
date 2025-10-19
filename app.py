@@ -1317,8 +1317,9 @@ def tab_collect():
     # ③ 데이터 범위(세로)
     st.markdown("### ③ 수합 데이터 범위 설정")
     st.markdown("📢 수합 파일 내 수합 데이터 범위를 먼저 확인해주세요")  
+    st.markdown("📢 수합 데이터 범위 내 빈 행이 존재하면 안됩니다. 🚫 ")  
     data_start = st.number_input("데이터 시작 행", min_value=1, value=2, step=1)
-    to_end = st.checkbox("데이터 마지막 행 = 파일 끝까지", value=True)
+    to_end = st.checkbox("데이터 마지막 행 = 해당 시트 맨 아래 끝까지", value=True)
     data_end = None
     if not to_end:
         data_end = st.number_input("데이터 마지막 행", min_value=1, value=max(2, data_start), step=1)
@@ -1397,6 +1398,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
