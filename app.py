@@ -102,7 +102,7 @@ def _kst_now() -> datetime:
 # ----------------------------------
 # 규칙/판정 보조 상수·함수(출장)
 # ----------------------------------
-_HOURS_GE4 = set(map(str, range(4, 24)))
+_HOURS_GE4 = set(map(str, range(4, 24))))
 _HOURS_LT4 = {"1", "2", "3"}
 
 def _extract_hour_token(s: str) -> str | None:
@@ -857,7 +857,8 @@ def _make_unique(cols):
 def _effective_header_width(head_df: pd.DataFrame) -> int:
     if head_df.empty:
         return 0
-    used = head_df.applymap(lambda x: bool(str(x).strip()) and str(x).lower() != "nan")
+    # applymap → map (deprecation 대응)
+    used = head_df.map(lambda x: bool(str(x).strip()) and str(x).lower() != "nan")
     cols_with_any = [i for i, has in enumerate(used.any(axis=0).tolist()) if has]
     return (max(cols_with_any) + 1) if cols_with_any else 0
 
@@ -974,10 +975,15 @@ def write_with_merged_header_and_source(
 
     start_row = hrows + 1
     for i, row in enumerate(dataframe_to_rows(df, index=False, header=False), start=start_row):
+        # 값·서식 분리 지정 → 병합셀 value 쓰기 예외 회피
         for j, v in enumerate(row[:data_cols], start=1):
-            ws.cell(i, j, v).border = border
-        ws.cell(i, src_col_idx, row[data_cols]).fill = fill_src
-        ws.cell(i, src_col_idx).border = border
+            cell = ws.cell(i, j)
+            cell.value = v
+            cell.border = border
+        cell_src = ws.cell(i, src_col_idx)
+        cell_src.value = row[data_cols]
+        cell_src.fill = fill_src
+        cell_src.border = border
 
     # 6) 열 너비 추정
     preview_end = min(start_row + max(50, len(df)), ws.max_row)
@@ -1052,6 +1058,7 @@ def tab_gwannae():
                 data=st.session_state["OUT_BYTES"],
                 file_name=f"관내출장_가공요약_{kst_timestamp()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch",
             )
         except Exception as e:
             st.error(f"오류: {e}")
@@ -1113,9 +1120,9 @@ def tab_gwannae():
 
         b1, b2 = st.columns([1, 1])
         with b1:
-            add_clicked = st.button("➕ 추가", use_container_width=True)
+            add_clicked = st.button("➕ 추가", width="stretch")
         with b2:
-            reset_clicked = st.button("🔄 초기화", use_container_width=True)
+            reset_clicked = st.button("🔄 초기화", width="stretch")
 
         if add_clicked:
             if chosen:
@@ -1155,7 +1162,7 @@ def tab_gwannae():
             })
         summary_all = pd.DataFrame(rows, columns=["성명", "지급단가", "출장일수", "여비합계", "출장현황"])
 
-        st.dataframe(summary_all, use_container_width=True)
+        st.dataframe(summary_all, width="stretch")
         cA, cB, cC = st.columns(3)
         with cA:
             st.metric("총 인원", f"{summary_all['성명'].nunique()}")
@@ -1194,9 +1201,9 @@ def tab_gwannae():
                     data=xbytes,
                     file_name=fname,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
+                    width="stretch",
                 )
-                st.dataframe(mixed_df, use_container_width=True, height=360)
+                st.dataframe(mixed_df, width="stretch", height=360)
 
             except Exception as e:
                 st.error(f"지급 조서 생성 오류: {e}")
@@ -1263,7 +1270,7 @@ def tab_overtime():
                 df_quarter_named = _rename_quarter_headers(df_quarter, months)
                 view_df = df_quarter_named.drop(columns=[c for c in df_quarter_named.columns if str(c).startswith("_")])
 
-                st.dataframe(view_df, use_container_width=True)
+                st.dataframe(view_df, width="stretch")
                 st.session_state["OVT_Q_DF"] = df_quarter_named
                 st.session_state["OVT_VIEW_DF"] = view_df
                 st.session_state["OVT_YEAR"] = int(sel_year)
@@ -1292,7 +1299,7 @@ def tab_overtime():
                 data=xbytes,
                 file_name=fname,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
+                width="stretch",
             )
         except Exception as e:
             st.error(f"엑셀 생성 오류: {e}")
@@ -1303,7 +1310,7 @@ def tab_collect():
 
     # ① 업로드
     st.markdown("### ① 수합 대상 파일 업로드")
-    st.markdown("📢 각 수합 파일의 머릿글은 모두 동일해야 합니다. ")  
+    st.markdown("📢 각 수합 파일의 머릿글은 모두 동일해야 합니다. ")
     files = st.file_uploader("※ 엑셀 파일 복수 선택 가능", type=["xls", "xlsx"], accept_multiple_files=True)
 
     # ② 머릿글 범위(세로)
@@ -1313,11 +1320,11 @@ def tab_collect():
     header_last  = st.number_input("머릿글 마지막 행", min_value=1, value=1, step=1)  # 기본 1
     st.caption("예) 머릿글이 1~2행이면 첫 행=1, 마지막 행=2")
     st.caption("예) 머릿글이   1행이면 첫 행=1, 마지막 행=1")
-  
+
     # ③ 데이터 범위(세로)
     st.markdown("### ③ 수합 데이터 범위 설정")
-    st.markdown("📢 수합 파일 내 수합 데이터 범위를 먼저 확인해주세요")  
-    st.markdown("📢 수합 데이터 범위 내 빈 행이 존재하면 안됩니다. 🚫 ")  
+    st.markdown("📢 수합 파일 내 수합 데이터 범위를 먼저 확인해주세요")
+    st.markdown("📢 수합 데이터 범위 내 빈 행이 존재하면 안됩니다. 🚫 ")
     data_start = st.number_input("데이터 시작 행", min_value=1, value=2, step=1)
     to_end = st.checkbox("데이터 마지막 행 = 해당 시트 맨 아래 끝까지", value=True)
     data_end = None
@@ -1327,7 +1334,6 @@ def tab_collect():
     st.caption("데이터 마지막 행을 직접 지정하고 싶으시면, '체크 해제'하세요")
     st.caption("데이터 범위 지정은 업로드된 파일들에 공통으로 적용됩니다.")
 
-  
     # 실행
     if files:
         if header_last < header_first:
@@ -1374,11 +1380,11 @@ def tab_collect():
                 data=buf.getvalue(),
                 file_name=out_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
+                width="stretch",
             )
 
             st.success(f"수합 완료: {len(dfs)}개 파일, {len(merged):,}행")
-            st.dataframe(merged.head(50), use_container_width=True)
+            st.dataframe(merged.head(50), width="stretch")
     else:
         st.info("엑셀 파일을 업로드하세요.")
 
@@ -1398,11 +1404,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
