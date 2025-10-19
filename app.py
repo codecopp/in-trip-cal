@@ -1300,8 +1300,7 @@ def tab_collect():
 
     # ① 업로드
     st.markdown("### ① 수합 대상 파일 업로드")
-    st.markdown("📢 엑셀 파일 복수 선택 가능")
-    files = st.file_uploader(type=["xls", "xlsx"], accept_multiple_files=True)
+    files = st.file_uploader("📢 엑셀 파일 복수 선택 가능", type=["xls", "xlsx"], accept_multiple_files=True)
 
     # ② 머릿글 범위(세로)
     st.markdown("### ② 머릿글 범위 설정")
@@ -1394,4 +1393,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
