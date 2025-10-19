@@ -1002,6 +1002,9 @@ def write_with_merged_header_and_source(
 
 def tab_gwannae():
     st.title("🚗 관내출장여비 정산")
+    st.markdown("📢 「인사랑」에서 결재완료된 자료를 기준으로 합니다. ")
+    st.markdown("📢 새올 '차량 관리' 내역은 반영되어 있지 않습니다. ")  
+    st.markdown("📢 동명이인이 존재할 경우, 에러가 발생할 수 있습니다. ")
     st.markdown("---")
     st.markdown("#### ① 업로드용 백데이터 준비（파일 열리는데 조금 걸려요）")
     st.markdown("📢 １．「인사랑」에서 관내 출장여비 엑셀을 추출해주세요．")
@@ -1307,7 +1310,7 @@ def tab_overtime():
 def tab_collect():
     st.title("📊 자료 수합(엑셀 파일만 가능)")
     st.markdown("📢 각 수합 파일의 머릿글은 모두 동일해야 합니다. ")
-    st.markdown("📢 수합 데이터 범위 내 빈 행이 존재하면 안됩니다. ")
+    st.markdown("📢 수합 데이터 범위 내 행과 행 사이에 빈 행이 존재하면 안됩니다. ")
     st.markdown("📢 수합 데이터 범위 내 병합된 셀들이 존재하면 안됩니다. ")  
     st.markdown("---")
 
@@ -1405,5 +1408,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
