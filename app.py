@@ -1208,7 +1208,7 @@ def tab_overtime():
     st.markdown("#### ① 업로드용 백데이터 준비（파일 열리는데 조금 걸려요）")
     st.markdown("📢 초과근무자 백데이터 서식 파일입니다．")
     st.markdown("※ 연번|직급|성명|「인사랑」에서 조회되는 초과수당시간을 입력하세요.")
-    st.markdown("※ 데이터 입력 시, 머릿글(헤더)은 수정하시면 안됩니다.")
+    st.markdown("※ 데이터 입력 시, 머릿글(헤더)은 수정하시면 안됩니다. 🚫 ")
     if os.path.exists(FORM_TEMPLATE_FILE_OVT):
         with open(FORM_TEMPLATE_FILE_OVT, "rb") as f:
             st.download_button(
@@ -1221,6 +1221,8 @@ def tab_overtime():
     st.markdown("---")
     st.markdown("#### ② 파일 업로드")
     st.markdown("📢 작성 완료한 ‘초과근무자 백데이터’ 파일을 업로드해주세요．")
+    st.caption("※ 백데이터 파일을 토대로, 엑셀 파일이 생성됩니다.")
+  
     tmpl_up = st.file_uploader("📂 초과근무자 백데이터 업로드 (.xlsx)", type=["xlsx"], key="ovt_tmpl_upload")
     if tmpl_up is not None:
         try:
@@ -1394,6 +1396,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
