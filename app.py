@@ -1213,6 +1213,9 @@ def tab_gwannae():
 
 def tab_overtime():
     st.title("⏱️ 초과근무내역")
+    st.markdown("📢 「인사랑」에서 결재완료 자료를 기준으로 합니다.")
+    st.markdown("📢 수기 또는 재난 비상근무 시간은 제외된 자료이므로, 참고용으로 활용하세요.")
+    st.markdown("📢 월 최대 57시간 & 분기 합 최대 90시간 상한시간을 적용하였습니다.")  
     st.markdown("---")
 
     st.markdown("#### ① 업로드용 백데이터 준비（파일 열리는데 조금 걸려요）")
@@ -1285,7 +1288,6 @@ def tab_overtime():
     st.markdown("---")
     st.markdown("#### ④ 초과근무내역 엑셀 저장")
     st.markdown("📢 상한시간을 초과한 경우, 빨간색으로 표시하였습니다.")
-    st.markdown("📢 수기 또는 재난 비상근무 시간은 제외된 자료이므로, 참고용으로 활용하세요.")
     if "OVT_Q_DF" not in st.session_state:
         st.info("③ 가공을 먼저 실행하세요.")
     else:
@@ -1308,7 +1310,7 @@ def tab_overtime():
             st.error(f"엑셀 생성 오류: {e}")
 
 def tab_collect():
-    st.title(" 🗂 자료 수합(엑셀 파일만 가능)")
+    st.title(" 📊 자료 수합(엑셀 파일만 가능)")
     st.markdown("📢 각 수합 파일의 머릿글은 모두 동일해야 합니다. ")
     st.markdown("📢 수합 데이터 범위 내 행과 행 사이에 빈 행이 존재하면 안됩니다. ")
     st.markdown("📢 수합 데이터 범위 내 병합된 셀들이 존재하면 안됩니다. ")  
@@ -1408,6 +1410,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
