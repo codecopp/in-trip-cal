@@ -1217,13 +1217,13 @@ def tab_overtime():
     st.title("⏱️ 초과근무내역")
     st.markdown("📢 「인사랑」에서 결재완료 자료를 기준으로 합니다.")
     st.markdown("📢 수기 또는 재난 비상근무 시간은 제외된 자료이므로, 참고용으로 활용하세요.")
-    st.markdown("📢 월 최대 57시간 & 분기 합 최대 90시간 상한시간을 적용하였습니다.")  
+    st.markdown("📢 '월 최대 57시간 & 분기 합 최대 90시간' 상한시간을 적용하였습니다.")  
     st.markdown("---")
 
     st.markdown("#### ① 업로드용 백데이터 준비（파일 열리는데 조금 걸려요）")
     st.markdown("📢 초과근무자 백데이터 서식 파일입니다．")
-    st.markdown("※ 연번|직급|성명|「인사랑」에서 조회되는 초과수당시간을 입력하세요.")
-    st.markdown("※ 데이터 입력 시, 머릿글(헤더)은 수정하시면 안됩니다. 🚫 ")
+    st.markdown("📢 연번|직급|성명|「인사랑」에서 조회되는 초과수당시간|을 입력하세요.")
+    st.markdown("📢 데이터 입력 시, 머릿글(헤더)은 절대 수정하시면 안됩니다. 🚫 ")
     if os.path.exists(FORM_TEMPLATE_FILE_OVT):
         with open(FORM_TEMPLATE_FILE_OVT, "rb") as f:
             st.download_button(
@@ -1234,9 +1234,9 @@ def tab_overtime():
             )
 
     st.markdown("---")
-    st.markdown("#### ② 파일 업로드")
+    st.markdown("#### ② 준비된 파일 업로드")
     st.markdown("📢 작성 완료한 ‘초과근무자 백데이터’ 파일을 업로드해주세요．")
-    st.markdown("※ 백데이터 파일을 토대로, 엑셀 파일이 생성됩니다．")
+    st.markdown("📢 백데이터 파일을 토대로, 엑셀 파일이 생성됩니다．")
 
     tmpl_up = st.file_uploader("📂 초과근무자 백데이터 업로드 (.xlsx)", type=["xlsx"], key="ovt_tmpl_upload")
     if tmpl_up is not None:
@@ -1313,7 +1313,7 @@ def tab_overtime():
 
 def tab_collect():
     st.title(" 📊 자료 수합(엑셀 파일만 가능)")
-    st.markdown("📢 각 수합 파일의 머릿글은 모두 동일해야 합니다. ")
+    st.markdown("📢 각 수합 파일의 머릿글은 서식이나 글자 변경 없이 모두 동일해야 합니다. ")
     st.markdown("📢 수합 데이터 범위 내 행과 행 사이에 빈 행이 존재하면 안됩니다. ")
     st.markdown("📢 수합 데이터 범위 내 병합된 셀들이 존재하면 안됩니다. ")  
     st.markdown("---")
@@ -1412,6 +1412,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
