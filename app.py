@@ -1007,13 +1007,13 @@ def tab_gwannae():
     st.markdown("📢 동명이인이 존재할 경우, 에러가 발생할 수 있습니다. ")
     st.markdown("---")
     st.markdown("#### ① 업로드용 백데이터 준비（파일 열리는데 조금 걸려요）")
-    st.markdown("📢 １．「인사랑」에서 관내 출장여비 엑셀을 추출해주세요．")
+    st.markdown("📢 １．아래 매뉴얼을 참고하여,「인사랑」에서 관내 출장여비 엑셀을 추출해주세요．")
     if os.path.exists(MANUAL_FILE):
         with open(MANUAL_FILE, "rb") as f:
             st.download_button("📂 엑셀 추출 매뉴얼", f, file_name=MANUAL_FILE, mime="application/pdf")
 
     st.markdown("📢 ２． 출장자 백데이터 서식 파일입니다．")
-    st.markdown("※ 연번|직급|성명|은행명|계좌번호를 입력한 후, 파일을 저장해주세요．")
+    st.markdown("※ 연번|직급|성명|은행명|계좌번호|를 입력한 후, 파일을 저장해주세요．")
     st.markdown("※ 입력된 데이터를 바탕으로, 지급조서가 생성됩니다.")
     if os.path.exists(FORM_TEMPLATE_FILE):
         with open(FORM_TEMPLATE_FILE, "rb") as f:
@@ -1025,7 +1025,7 @@ def tab_gwannae():
             )
 
     st.markdown("---")
-    st.markdown("#### ② 파일 업로드")
+    st.markdown("#### ② 준비된 파일 업로드")
     st.markdown("📢 １．「인사랑」 관내 출장여비 추출본 업로드")
     raw_up = st.file_uploader("📂 「인사랑」 관내 출장여비 추출본 업로드 (.xlsx)", type=["xlsx"], key="raw_upload")
     if raw_up is not None:
@@ -1046,7 +1046,9 @@ def tab_gwannae():
 
     st.markdown("---")
     st.markdown("#### ③ 데이터 가공 · 요약")
-    st.markdown("📢 부서명을 입력하고, 필요시 날짜 포함/제외 규칙을 추가하세요.")
+    st.markdown("📢 부서명을 입력하세요.")
+    st.markdown("📢 특정 출장일자를 '제외' 또는 '포함'하려면 '포함/제외 규칙'을 추가하세요.")
+    st.markdown("📢 규칙 추가 후, 다시 수정해야한다면 초기화하고 다시 처음부터 추가하셔야 합니다.")
     btn = st.button("⌛ 가공 실행(백데이터→가공→요약)", type="primary", disabled=(raw_up is None))
     if btn:
         try:
@@ -1410,6 +1412,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
